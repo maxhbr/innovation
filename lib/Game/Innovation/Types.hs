@@ -4,7 +4,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 
 --------------------------------------------------------------------------------
--- Basic types 
+-- Basic types
 --------------------------------------------------------------------------------
 
 data Color
@@ -46,15 +46,57 @@ data Symbol
 --------------------------------------------------------------------------------
 
 data Action
-  = RawAction String
+  -- Basic / chooseable actions
+  = Play Card
+  | Draw
+  | Dominate Age
+  | Activate Color
+  -- advanced actions
+  | Archive
+  | Recycle Card
+  | Splay Color SplayState
+  | DrawAnd Action
+  | DrawFromAnd Age Action
+  | Score Card
+  | DrawFrom Age
+  -- Raw
+  | RawAction String
   deriving (Eq,Show)
+
+drawAndDo :: (Card -> Action) -> Action
+drawAndDo = undefined
+
+drawFromAndDo :: (Card -> Action) -> Age -> Action
+drawFromAndDo = undefined
 
 --------------------------------------------------------------------------------
 -- Dogmas
 --------------------------------------------------------------------------------
 
+data Selector
+  = Hand
+  | Influence
+  | StackOfColor Color
+  | TheCard Card
+  -- Selector combinators
+  | OrSelector [Selector]
+  | AndSelector [Selector]
+  | OneOf Selector
+  | HalfOf Selector
+  | AllOf Selector
+  | UpTo Selector
+  -- Raw
+  | RawSelector String
+  deriving (Eq,Show)
+
 data DogmaDescription
-  = RawDescription String
+  = D Action
+  | DD Action Selector
+  -- DogmaDescription combinators
+  | YouMay DogmaDescription
+  | AndAlsoDo DogmaDescription DogmaDescription
+  -- Raw
+  | RawDescription String
   deriving (Eq,Show)
 
 data Dogma
