@@ -2,6 +2,7 @@ module Game.Innovation.Types
     where
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Text
 
 --------------------------------------------------------------------------------
 -- Basic types
@@ -145,9 +146,9 @@ data SplayState
   | NotSplayed
   deriving (Eq,Show)
 
-type PlayerId = String
+type UserId = String
 data Player
-  = Player { playerId    :: PlayerId
+  = Player { playerId    :: UserId
            , stacks      :: Map Color Stack
            , splayStates :: Map Color SplayState
            , influence   :: Stack
@@ -155,7 +156,7 @@ data Player
            , hand        :: Stack }
   deriving (Show)
 
-mkPlayer :: PlayerId -> Player
+mkPlayer :: UserId -> Player
 mkPlayer playerId = Player playerId
                            (Map.fromList $ zip colors $ repeat [])
                            (Map.fromList $ zip colors $ repeat NotSplayed)
@@ -167,11 +168,24 @@ mkPlayer playerId = Player playerId
 -- Game state
 --------------------------------------------------------------------------------
 
+class Logable where
+  logForUser :: UserId -> Text
+
+data UserAction
+  = UserAction Action
+  deriving (Eq,Show)
+instance Logable UserAction where
+  logForUser = undefined
+
+type History = [(USerId, UserAction)]
+instance Logable History where
+  logForUser = undefined
+
 data State
   = State { drawStacks   :: Map Age Stack
           , permutations :: Map Age [Int]
-          , players      :: Player
-          , history      :: String }
+          , players      :: [Player]
+          , history      :: History}
 mkState :: Map Age [Int] -> State
 mkState permutations = undefined
 

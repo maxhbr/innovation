@@ -13,7 +13,7 @@ playerFoo: play age1:agriculture
 player1: play age1:clothing
 ... staring player is playerFoo
 
-playerFoo: draw
+playerFoo: draw [got age1 card]
 
 player1: draw [got age1:metalworking]
 player1: activate yellow
@@ -36,9 +36,35 @@ where
 - parts in brackets (`[`..`]`) depend on the viewing user, everything else is
   visible to everyone
 - `admin` is the user who has created this game
-- `age1:3` is an id of an card **in the current game**, where the first part
-  determines the age of a card and the second part is the id of the card after
-  applying the inital pormutation for this age
+- everything starting with `...` is generated output which is not saved
+- `age1:agriculture` is an id of a card
+- `age1:agriculture:1` is an id of a dogma on a card
+
+The internal representation might be of type 
+```
+type History = [(UserId,UserAction)]
+```
+and might look like
+```
+admin, p1, p2 :: UserId
+seed :: Integer
+
+[(admin, Init seed)
+,(admin, AddPlayer p1)
+,(admin, AddPlayer p2)
+,(p2, Play age1:agriculture)
+,(p1, Play age1:clothing)
+,(p2, Draw)
+,(p1, Draw)
+,(p1, Activate Yellow)
+,(p2. Choose age1:someCard)
+,(p2, Play age1:codeOfLaws)
+,(p2, Activate Purple)
+,(p1, Dominate Age1)
+,(p1, Draw)
+,[...]
+]
+```
 
 ### More information:
 - official rules (of the base game):
