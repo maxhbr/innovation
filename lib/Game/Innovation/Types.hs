@@ -162,3 +162,21 @@ mkPlayer playerId = Player playerId
                            []
                            []
                            []
+
+--------------------------------------------------------------------------------
+-- Game state
+--------------------------------------------------------------------------------
+
+data State
+  = State { drawStacks   :: Map Age Stack
+          , permutations :: Map Age [Int]
+          , players      :: Player
+          , history      :: String }
+mkState :: Map Age [Int] -> State
+mkState permutations = undefined
+
+type Transition = State -> State
+
+-- class (Eq,Show) => Action where
+--   play :: Action -> Transition
+--   accepts :: State -> Action -> Boolean
