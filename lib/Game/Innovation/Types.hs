@@ -2,7 +2,10 @@ module Game.Innovation.Types
     where
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Text
+import Data.Text (Text)
+import qualified Data.Text as T
+
+import Game.Innovation.Machine
 
 --------------------------------------------------------------------------------
 -- Basic types
@@ -146,7 +149,6 @@ data SplayState
   | NotSplayed
   deriving (Eq,Show)
 
-type UserId = String
 data Player
   = Player { playerId    :: UserId
            , stacks      :: Map Color Stack
@@ -168,29 +170,11 @@ mkPlayer playerId = Player playerId
 -- Game state
 --------------------------------------------------------------------------------
 
-class Logable where
-  logForUser :: UserId -> Text
-
-data UserAction
-  = UserAction Action
-  deriving (Eq,Show)
-instance Logable UserAction where
-  logForUser = undefined
-
-type History = [(USerId, UserAction)]
-instance Logable History where
-  logForUser = undefined
-
 data State
   = State { drawStacks   :: Map Age Stack
           , permutations :: Map Age [Int]
           , players      :: [Player]
-          , history      :: History}
+          , history      :: Game State }
 mkState :: Map Age [Int] -> State
 mkState permutations = undefined
 
-type Transition = State -> State
-
--- class (Eq,Show) => Action where
---   play :: Action -> Transition
---   accepts :: State -> Action -> Boolean

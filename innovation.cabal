@@ -21,6 +21,8 @@ library
   exposed-modules:     Game.Innovation
   build-depends:       base
                      , containers
+                     , text
+                     , mtl
 
 executable innovation
   main-is:             Main.hs
