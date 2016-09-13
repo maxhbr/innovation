@@ -23,6 +23,12 @@ library
                      , containers
                      , text
                      , mtl
+  exposed-modules:     Game.MetaGame
+                     , Game.Innovation.Admin
+                     , Game.Innovation.Cards
+                     , Game.Innovation.Rules
+                     , Game.Innovation.Types
+
 
 executable innovation
   main-is:             Main.hs

@@ -1,11 +1,13 @@
+{-# LANGUAGE FlexibleContexts #-}
 module Game.Innovation.Types
     where
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Proxy
 
-import Game.Innovation.Machine
+import Game.MetaGame
 
 --------------------------------------------------------------------------------
 -- Basic types
@@ -49,22 +51,25 @@ data Symbol
 -- Actions
 --------------------------------------------------------------------------------
 
+-- data Action
+--   -- Basic / chooseable actions
+--   = Play Card
+--   | Draw
+--   | Dominate Age
+--   | Activate Color
+--   -- advanced actions
+--   | Archive
+--   | Recycle Card
+--   | Splay Color SplayState
+--   | DrawAnd Action
+--   | DrawFromAnd Age Action
+--   | Score Card
+--   | DrawFrom Age
+--   -- Raw
+--   | RawAction String
+--   deriving (Eq,Show)
 data Action
-  -- Basic / chooseable actions
-  = Play Card
-  | Draw
-  | Dominate Age
-  | Activate Color
-  -- advanced actions
-  | Archive
-  | Recycle Card
-  | Splay Color SplayState
-  | DrawAnd Action
-  | DrawFromAnd Age Action
-  | Score Card
-  | DrawFrom Age
-  -- Raw
-  | RawAction String
+  =  RawAction String
   deriving (Eq,Show)
 
 drawAndDo :: (Card -> Action) -> Action
@@ -129,6 +134,7 @@ data Productions
                 , brProduction :: Production }
   deriving (Eq,Show)
 
+type CardId = String
 data Card
   = Card { color       :: Color
          , age         :: Age
@@ -143,9 +149,9 @@ data Card
 type Stack = [Card]
 
 data SplayState
-  = Left
-  | Right
-  | Up
+  = SplayedLeft
+  | SplayedRight
+  | SplayedUp
   | NotSplayed
   deriving (Eq,Show)
 
@@ -158,23 +164,16 @@ data Player
            , hand        :: Stack }
   deriving (Show)
 
-mkPlayer :: UserId -> Player
-mkPlayer playerId = Player playerId
-                           (Map.fromList $ zip colors $ repeat [])
-                           (Map.fromList $ zip colors $ repeat NotSplayed)
-                           []
-                           []
-                           []
-
 --------------------------------------------------------------------------------
 -- Game state
 --------------------------------------------------------------------------------
 
-data State
-  = State { drawStacks   :: Map Age Stack
-          , permutations :: Map Age [Int]
-          , players      :: [Player]
-          , history      :: Game State }
-mkState :: Map Age [Int] -> State
-mkState permutations = undefined
+data Choices -- TODO
 
+data State
+  = State { getDrawStacks :: Map Age Stack
+          , getPlayers    :: [Player]
+          , getHistory    :: Game State }
+  | WaitForChoices { choices :: [Choices]
+                   , state   :: State }
+  | FinishedGame State
