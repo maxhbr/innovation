@@ -51,23 +51,6 @@ data Symbol
 -- Actions
 --------------------------------------------------------------------------------
 
--- data Action
---   -- Basic / chooseable actions
---   = Play Card
---   | Draw
---   | Dominate Age
---   | Activate Color
---   -- advanced actions
---   | Archive
---   | Recycle Card
---   | Splay Color SplayState
---   | DrawAnd Action
---   | DrawFromAnd Age Action
---   | Score Card
---   | DrawFrom Age
---   -- Raw
---   | RawAction String
---   deriving (Eq,Show)
 data Action
   =  RawAction String
   deriving (Eq,Show)
@@ -164,6 +147,9 @@ data Player
            , getHand        :: Stack }
   deriving (Show)
 
+instance UserC Player where
+  getUserId = getPlayerId
+
 --------------------------------------------------------------------------------
 -- Game state
 --------------------------------------------------------------------------------
@@ -173,12 +159,22 @@ data Choices -- TODO
 data State
   = Q0
   | Prepare State
-  | State { getDrawStacks :: Map Age Stack
-          , getPlayers    :: [Player]
-          , getHistory    :: Game State }
+  | State { getDrawStacks  :: Map Age Stack
+          , getPlayers     :: [Player]
+          , getPlayerOrder :: [UserId]
+          , getHistory     :: Game State }
   | WaitForChoices { choices :: [Choices]
                    , state   :: State }
   | FinishedGame State
 
 pack :: UserActionC State action => action -> UserAction State
 pack = pack' (Proxy :: Proxy State)
+
+instance StateC State where
+  getCurrentPlayer  Q0                               = Nothing
+  getCurrentPlayer (Prepare _)                       = Nothing
+  getCurrentPlayer (FinishedGame state)              = getCurrentPlayer state
+  getCurrentPlayer State { getPlayerOrder = order
+                         , getHistory     = history} = Just $ order !! (length history)
+
+  getWinner _ = undefined

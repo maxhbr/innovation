@@ -39,8 +39,8 @@ class StateC state where
 
 class (StateC state, Read action, Show action) => UserActionC state action where
   getTransition' :: action -> Transition state
-  burnsAction' :: action -> Bool
-  burnsAction' = const True
+  isMetaAction' :: action -> Bool
+  isMetaAction' = const False
 
 data UserAction state = forall action. UserActionC state action => UserAction { getAction :: action }
 pack' :: UserActionC state action => Proxy state -> action -> UserAction state

@@ -38,6 +38,7 @@ mkInitialState :: Int -> State
 mkInitialState seed = State permutatedDrawStack
                             []
                             []
+                            []
   where
     stdGen = mkStdGen seed
     shuffle []    = []
@@ -58,7 +59,7 @@ instance UserActionC State Init where
                                                  Nothing -> "Init [with seed " ++ show seed ++ "]"
                                                  Just _  -> "Init [with seed only visible for admin]"])
   getTransition' _ _            = fail "Game was already inited"
-  burnsAction' = const False
+  isMetaAction' = const True
 
 -- | AddPlayer
 -- add an player with a given playerId to the game
@@ -67,10 +68,11 @@ data AddPlayer = AddPlayer UserId
 instance UserActionC State AddPlayer where
   getTransition' (AddPlayer playerId) (Prepare state) = W.writer ( Right $
                                                                    Prepare $
-                                                                   state { getPlayers = mkPlayer playerId : getPlayers state }
+                                                                   state { getPlayers = mkPlayer playerId : getPlayers state
+                                                                         , getPlayerOrder = playerId : getPlayerOrder state }
                                                                  , [T.pack . const ("AddUser " ++ playerId)])
   getTransition' _ _                                  = fail "Game was not in prepare state"
-  burnsAction' = const False
+  isMetaAction' = const True
 
 -- | StartGame
 -- finish preperations of the game
@@ -80,7 +82,7 @@ instance UserActionC State StartGame where
   getTransition' _ (Prepare state) = W.writer ( Right state
                                               , [T.pack . const "StartGame"])
   getTransition' _ _               = fail "Game was not in prepare state"
-  burnsAction' = const False
+  isMetaAction' = const True
 
 -- data DropPlayer = DropPlayer UserId
 --                 deriving (Show, Read)

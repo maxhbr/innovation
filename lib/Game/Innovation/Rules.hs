@@ -15,17 +15,6 @@ import Game.MetaGame
 import Game.Innovation.Types
 import Game.Innovation.Cards
 
-instance UserC Player where
-  getUserId = getPlayerId
-
-instance StateC State where
-  getCurrentPlayer  Q0                  = Nothing
-  getCurrentPlayer (Prepare _)          = Nothing
-  getCurrentPlayer (FinishedGame state) = getCurrentPlayer state
-  getCurrentPlayer _                    = undefined
-
-  getWinner _ = undefined
-
 --------------------------------------------------------------------------------
 -- Helper functions
 --------------------------------------------------------------------------------
