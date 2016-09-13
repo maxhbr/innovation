@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Game.Innovation.Types
-    where
+       where
+
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Text (Text)
@@ -13,38 +14,17 @@ import Game.MetaGame
 -- Basic types
 --------------------------------------------------------------------------------
 
-data Color
-  = Blue
-  | Purple
-  | Red
-  | Yellow
-  | Green
+data Color = Blue | Purple | Red | Yellow | Green
   deriving (Eq,Show,Read,Enum,Ord)
 colors :: [Color]
 colors = map (\n -> toEnum n :: Color) [0..4]
 
-data Age
-  = Age1
-  | Age2
-  | Age3
-  | Age4
-  | Age5
-  | Age6
-  | Age7
-  | Age8
-  | Age9
-  | Age10
+data Age = Age1 | Age2 | Age3 | Age4 | Age5 | Age6 | Age7 | Age8 | Age9 | Age10
   deriving (Eq,Show,Read,Enum,Ord)
 ages :: [Age]
 ages = map (\n -> toEnum n :: Age) [0..9]
 
-data Symbol
-  = Castle
-  | Tree
-  | Coins
-  | Bulb
-  | Factory
-  | Clock
+data Symbol = Castle | Tree | Coins | Bulb | Factory | Clock
   deriving (Eq,Show,Read,Enum,Ord)
 
 --------------------------------------------------------------------------------
@@ -105,16 +85,16 @@ data Production
   | Produce Symbol
   deriving (Eq,Show)
 
---   +---------------+
---   | 1             |
---   |               |
---   | 2     3     4 |
---   +---------------+
+--   +----------------+
+--   | tl             |
+--   |                |
+--   | bl    bc    br |
+--   +----------------+
 data Productions
-  = Productions { tlProduction :: Production
-                , blProduction :: Production
-                , bcProduction :: Production
-                , brProduction :: Production }
+  = Productions { tlProd :: Production
+                , blProd :: Production
+                , bcProd :: Production
+                , brProd :: Production }
   deriving (Eq,Show)
 
 type CardId = String
@@ -154,6 +134,8 @@ instance UserC Player where
 -- Game state
 --------------------------------------------------------------------------------
 
+type PlayerOrder = [UserId]
+
 data Choices -- TODO
 
 data State
@@ -161,20 +143,19 @@ data State
   | Prepare State
   | State { getDrawStacks  :: Map Age Stack
           , getPlayers     :: [Player]
-          , getPlayerOrder :: [UserId]
+          , getPlayerOrder :: PlayerOrder
           , getHistory     :: Game State }
   | WaitForChoices { choices :: [Choices]
                    , state   :: State }
   | FinishedGame State
 
-pack :: UserActionC State action => action -> UserAction State
-pack = pack' (Proxy :: Proxy State)
+does :: UserActionC State action => UserId -> action -> UserAction State
+does = does' (Proxy :: Proxy State)
 
 instance StateC State where
-  getCurrentPlayer  Q0                               = Nothing
-  getCurrentPlayer (Prepare _)                       = Nothing
-  getCurrentPlayer (FinishedGame state)              = getCurrentPlayer state
-  getCurrentPlayer State { getPlayerOrder = order
-                         , getHistory     = history} = Just $ order !! (length history)
-
-  getWinner _ = undefined
+  getCurrentPlayer  Q0                              = Admin
+  getCurrentPlayer (Prepare _)                      = Admin
+  getCurrentPlayer (FinishedGame state)             = getCurrentPlayer state
+  getCurrentPlayer State { getPlayerOrder = order } = if null order
+                                                      then Admin
+                                                      else head order

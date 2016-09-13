@@ -26,8 +26,8 @@ import Game.Innovation.Rules
 -- Generators
 --------------------------------------------------------------------------------
 
-mkPlayer :: UserId -> Player
-mkPlayer playerId = Player playerId
+mkPlayer :: String -> Player
+mkPlayer playerId = Player (U playerId)
                            (Map.fromList $ zip colors $ repeat [])
                            (Map.fromList $ zip colors $ repeat NotSplayed)
                            []
@@ -54,24 +54,25 @@ mkInitialState seed = State permutatedDrawStack
 data Init = Init Int
           deriving (Show, Read)
 instance UserActionC State Init where
-  getTransition' (Init seed) Q0 = W.writer ( Right $ Prepare $ mkInitialState seed
-                                           , [T.pack . \case
-                                                 Nothing -> "Init [with seed " ++ show seed ++ "]"
-                                                 Just _  -> "Init [with seed only visible for admin]"])
-  getTransition' _ _            = fail "Game was already inited"
+  getTransition' Admin (Init seed) Q0 = W.writer ( Right $ Prepare $ mkInitialState seed
+                                                 , [T.pack . \case
+                                                      Admin -> "Init [with seed " ++ show seed ++ "]"
+                                                      U _  -> "Init [with seed only visible for admin]"])
+  getTransition' _ _ _                  = fail "Game was already inited or action was not authorized"
   isMetaAction' = const True
 
 -- | AddPlayer
 -- add an player with a given playerId to the game
-data AddPlayer = AddPlayer UserId
+data AddPlayer = AddPlayer String
                deriving (Show, Read)
 instance UserActionC State AddPlayer where
-  getTransition' (AddPlayer playerId) (Prepare state) = W.writer ( Right $
-                                                                   Prepare $
-                                                                   state { getPlayers = mkPlayer playerId : getPlayers state
-                                                                         , getPlayerOrder = playerId : getPlayerOrder state }
-                                                                 , [T.pack . const ("AddUser " ++ playerId)])
-  getTransition' _ _                                  = fail "Game was not in prepare state"
+  getTransition' Admin (AddPlayer playerId) (Prepare state) = W.writer ( Right $
+                                                                         Prepare $
+                                                                         state { getPlayers     = mkPlayer playerId : getPlayers state
+                                                                               , getPlayerOrder = (U playerId) : getPlayerOrder state }
+                                                                       , [T.pack . const ("AddUser " ++ playerId)])
+  -- allow user to add itself to a game?
+  getTransition' _ _ _                                        = fail "Game was not in prepare state or action was not authorized"
   isMetaAction' = const True
 
 -- | StartGame
@@ -79,9 +80,9 @@ instance UserActionC State AddPlayer where
 data StartGame = StartGame
                deriving (Show, Read)
 instance UserActionC State StartGame where
-  getTransition' _ (Prepare state) = W.writer ( Right state
-                                              , [T.pack . const "StartGame"])
-  getTransition' _ _               = fail "Game was not in prepare state"
+  getTransition' Admin _ (Prepare state) = W.writer ( Right state
+                                                    , [T.pack . const "StartGame"])
+  getTransition' _ _ _                   = fail "Game was not in prepare state or action was not authorized"
   isMetaAction' = const True
 
 -- data DropPlayer = DropPlayer UserId

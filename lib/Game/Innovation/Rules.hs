@@ -15,6 +15,12 @@ import Game.MetaGame
 import Game.Innovation.Types
 import Game.Innovation.Cards
 
+advancePlayerOrder :: PlayerOrder -> PlayerOrder
+advancePlayerOrder []                       = []
+advancePlayerOrder [p]                      = [p]
+advancePlayerOrder (p1:(p2:ps)) | p1 == p2  = p2:ps
+                                | otherwise = p2:ps ++ [p1,p1]
+
 --------------------------------------------------------------------------------
 -- Helper functions
 --------------------------------------------------------------------------------
