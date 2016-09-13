@@ -19,7 +19,7 @@ data Color
   | Red
   | Yellow
   | Green
-  deriving (Eq,Show,Enum,Ord)
+  deriving (Eq,Show,Read,Enum,Ord)
 colors :: [Color]
 colors = map (\n -> toEnum n :: Color) [0..4]
 
@@ -34,7 +34,7 @@ data Age
   | Age8
   | Age9
   | Age10
-  deriving (Eq,Show,Enum,Ord)
+  deriving (Eq,Show,Read,Enum,Ord)
 ages :: [Age]
 ages = map (\n -> toEnum n :: Age) [0..9]
 
@@ -45,7 +45,7 @@ data Symbol
   | Bulb
   | Factory
   | Clock
-  deriving (Eq,Show,Enum,Ord)
+  deriving (Eq,Show,Read,Enum,Ord)
 
 --------------------------------------------------------------------------------
 -- Actions
@@ -156,12 +156,12 @@ data SplayState
   deriving (Eq,Show)
 
 data Player
-  = Player { playerId    :: UserId
-           , stacks      :: Map Color Stack
-           , splayStates :: Map Color SplayState
-           , influence   :: Stack
-           , dominations :: Stack
-           , hand        :: Stack }
+  = Player { getPlayerId    :: UserId
+           , getStacks      :: Map Color Stack
+           , getSplayStates :: Map Color SplayState
+           , getInfluence   :: Stack
+           , getDominations :: Stack
+           , getHand        :: Stack }
   deriving (Show)
 
 --------------------------------------------------------------------------------
@@ -171,9 +171,14 @@ data Player
 data Choices -- TODO
 
 data State
-  = State { getDrawStacks :: Map Age Stack
+  = Q0
+  | Prepare State
+  | State { getDrawStacks :: Map Age Stack
           , getPlayers    :: [Player]
           , getHistory    :: Game State }
   | WaitForChoices { choices :: [Choices]
                    , state   :: State }
   | FinishedGame State
+
+pack :: UserActionC State action => action -> UserAction State
+pack = pack' (Proxy :: Proxy State)

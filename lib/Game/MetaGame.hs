@@ -1,16 +1,20 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE CPP #-}
 module Game.MetaGame
        ( UserId
-       , IsUserable (..)
+       , UserC (..)
+       , StateC (..)
        , UserActionC (..), UserAction, pack'
-       , Game, play)
+       , Game, play
+       , getLog, printLog)
     where
 
 import Data.Proxy
 import Data.Text (Text)
 import qualified Data.Text as T
+import Data.Maybe
 import Control.Monad.Writer (Writer)
 import qualified Control.Monad.Writer as W
 
@@ -21,13 +25,22 @@ import qualified Control.Monad.Writer as W
 type UserId = String
 type Log = Maybe UserId -> Text
 type LogWriter s = Writer [Log] s
-type Transition s = (s -> Writer [Log] (Either Text s))
+type Transition s = (s -> LogWriter (Either Text s))
 
-class IsUserable state where
-  getCurrentUser :: state -> Maybe UserId
+fail :: Text -> Writer [Log] (Either Text s)
+fail errorMsg = W.writer ( Left errorMsg
+                         , [const $  T.concat ["ERROR: ", errorMsg]] )
+class UserC user where
+  getUserId :: user -> UserId
 
-class (IsUserable state, Read action, Show action) => UserActionC state action where
+class StateC state where
+  getCurrentPlayer :: state -> Maybe UserId
+  getWinner :: state -> Maybe UserId
+
+class (StateC state, Read action, Show action) => UserActionC state action where
   getTransition' :: action -> Transition state
+  burnsAction' :: action -> Bool
+  burnsAction' = const True
 
 data UserAction state = forall action. UserActionC state action => UserAction { getAction :: action }
 pack' :: UserActionC state action => Proxy state -> action -> UserAction state
@@ -48,7 +61,7 @@ instance Eq (UserAction s) where
 type Game state = [UserAction state]
 
 --------------------------------------------------------------------------------
--- helper functions, which unpack the functions of UserActionC
+-- helper functions
 --------------------------------------------------------------------------------
 
 getTransition :: UserAction state -> Transition state
@@ -69,5 +82,8 @@ play state as = W.runWriter $ play' state as
         Left errorMsg  -> pure $ Left errorMsg
     play' state []    = pure $ Right state
 
-showLog :: (a, [Log]) -> Maybe UserId -> Text
-showLog (_, logs) userId = T.concat $ map (\f -> f userId) logs
+getLog :: (a, [Log]) -> Maybe UserId -> Text
+getLog (_, logs) userId = T.intercalate "\n" $ map (\f -> f userId) logs
+
+printLog :: (a, [Log]) -> Maybe UserId -> IO()
+printLog gs u = putStrLn $ T.unpack $ getLog gs u

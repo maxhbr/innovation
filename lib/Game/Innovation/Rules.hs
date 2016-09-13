@@ -15,52 +15,28 @@ import Game.MetaGame
 import Game.Innovation.Types
 import Game.Innovation.Cards
 
-instance IsUserable State where
-  getCurrentUser (FinishedGame state) = getCurrentUser state
-  getCurrentUser _                    = undefined
+instance UserC Player where
+  getUserId = getPlayerId
 
-#if false
-pack :: UserActionC State action => action -> UserAction State
-pack = pack' (Proxy :: State)
-#endif
+instance StateC State where
+  getCurrentPlayer  Q0                  = Nothing
+  getCurrentPlayer (Prepare _)          = Nothing
+  getCurrentPlayer (FinishedGame state) = getCurrentPlayer state
+  getCurrentPlayer _                    = undefined
 
---------------------------------------------------------------------------------
--- Generators
---------------------------------------------------------------------------------
-
-mkPlayer :: UserId -> Player
-mkPlayer playerId = Player playerId
-                           (Map.fromList $ zip colors $ repeat [])
-                           (Map.fromList $ zip colors $ repeat NotSplayed)
-                           []
-                           []
-                           []
-
-mkPermutations :: Map Age [Int]
-mkPermutations = undefined
-
-mkInitialState :: Map Age [Int] -> State
-mkInitialState permutations = State permutatedDrawStack [] []
-  where
-    permutatedDrawStack = Map.mapWithKey permutate permutations
-      where
-        permutate :: Age -> [Int] -> Stack
-        permutate age (i:is) = let
-          agethStack = fromJust $ Map.lookup age cards
-          ithCard = agethStack !! i
-          in ithCard : permutate age is
-        permutate age []     = []
+  getWinner _ = undefined
 
 --------------------------------------------------------------------------------
 -- Helper functions
 --------------------------------------------------------------------------------
 
-getCurrentPlayer :: State -> Player
-getCurrentPlayer = undefined
+getPlayerByUserId :: Maybe UserId -> State -> Maybe Player
+getPlayerByUserId Nothing _           = Nothing
+getPlayerByUserId (Just userId) state = undefined
 
 getCurrentAge :: Player -> Age
 getCurrentAge player = let
-  currentAges = (map (fromEnum . age . head) . filter (not . null) . Map.elems) $ stacks player
+  currentAges = (map (fromEnum . age . head) . filter (not . null) . Map.elems) $ getStacks player
   in if currentAges /= []
      then toEnum $ maximum currentAges
      else Age1
@@ -73,25 +49,3 @@ getCurrentDrawAge player state = if null agesAboveWithCards
     currentAge         = getCurrentAge player
     drawStacks         = getDrawStacks state
     agesAboveWithCards = Map.keys $ Map.filterWithKey (\ age stack -> age >= currentAge && stack /= []) drawStacks
-
---------------------------------------------------------------------------------
--- Chooseable actions
---------------------------------------------------------------------------------
---   = Play Card
---   | Draw
---   | Dominate Age
---   | Activate Color
-data Draw = Draw
-            deriving (Read, Show)
-
-instance UserActionC State Draw where
-  getTransition' _ state = W.writer (Right undefined, logs)
-    where
-      currentPlayer  = getCurrentPlayer state
-      currentDrawAge = getCurrentDrawAge currentPlayer state
-      logs           = undefined
-
-#if false
-chooseableActions :: [UserAction State]
-chooseableActions = map pack [Draw]
-#endif
