@@ -1,7 +1,5 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE CPP #-}
 module Game.MetaGame
        ( UserId (..), isAdmin
        , UserC (..)
@@ -17,11 +15,12 @@ import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Maybe
 import           Data.Monoid
-import           Control.Monad.Writer (WriterT (..), Writer (..))
+import           Control.Monad.Identity
+import           Control.Monad.Writer (WriterT)
 import qualified Control.Monad.Writer as W
-import           Control.Monad.Except (ExceptT (..), MonadError (..))
+import           Control.Monad.Except (ExceptT)
 import qualified Control.Monad.Except as E
-import           Control.Monad.State.Lazy (State (..))
+import           Control.Monad.State.Lazy (StateT)
 import qualified Control.Monad.State.Lazy as S
 
 --------------------------------------------------------------------------------
@@ -33,6 +32,7 @@ import qualified Control.Monad.State.Lazy as S
 data UserId = U String
             | Admin
             deriving (Show,Eq,Read)
+
 isAdmin :: UserId -> Bool
 isAdmin Admin = True
 isAdmin _     = False
@@ -57,20 +57,20 @@ data GameResult = NoWinner
 
 newtype Log = Log (UserId -> Text)
 
--- data Transition s = T (ExceptT Text (WriterT [Log] (State s)) GameResult)
--- data Transition s = T (Writer [Log] (State (Either Text s) GameResult))
-type TransitionType s = WriterT [Log] (State s) GameResult
+type TransitionType s = StateT s (ExceptT Text (WriterT [Log] Identity)) GameResult
+
 data Transition s = T { getTransition :: TransitionType s }
+
 instance StateC state =>
          Monoid (Transition state) where
-  mempty                = T $ S.put initialState >> return NoWinner
+  mempty                = T $ return NoWinner
   mappend (T t1) (T t2) = T $ t1 >> t2
 
 -- ** Actions
 
 class (StateC state, Read actionToken, Show actionToken) =>
       ActionC state actionToken where
-  toTransition' :: userId -> actionToken -> Transition state
+  toTransition' :: UserId -> actionToken -> Transition state
   isMetaAction' :: actionToken -> Bool
   isMetaAction' = const False
 
@@ -78,9 +78,11 @@ data Action state = forall actionToken.
                     ActionC state actionToken =>
                     Action { getActingPlayer :: UserId
                            , getToken :: actionToken }
+
 instance Show (Action state) where
   show (Action Admin action)      = show action
   show (Action (U userId) action) = userId ++ ": " ++ show action
+
 instance Eq (Action state) where
   act1 == act2 = show act1 == show act2
 
@@ -99,17 +101,28 @@ newtype Game state = G [Action state]
 -- * play
 --------------------------------------------------------------------------------
 
+type PlayResult state = (Either Text (GameResult, state), [Log])
+
 play :: StateC state =>
-        Game state -> ((GameResult, [Log]), state)
+        Game state -> PlayResult state
 play (G game) = let
   fullTransition = getTransition $
                    mconcat $
                    map actionToTransition game
-  in (S.runState . W.runWriterT) fullTransition initialState
+  in (runIdentity .
+      W.runWriterT .
+      E.runExceptT .
+      S.runStateT fullTransition) initialState
 
-extractGameResult :: ((GameResult, [Log]), state) -> GameResult
-extractGameResult ((result,_),_) = result
-extractLog :: ((GameResult, [Log]), state) -> [Log]
-extractLog ((_,log),_) = log
-extractState :: ((GameResult, [Log]), state) -> state
-extractState (_, state) = state
+-- ** related helper
+
+extractGameResult :: PlayResult state -> GameResult
+extractGameResult (Right (result,_),_) = result
+extractGameResult _                    = NoWinner
+
+extractLog :: PlayResult state -> [Log]
+extractLog (_,log) = log
+
+extractState :: PlayResult state -> Maybe state
+extractState (Right (_,state),_) = Just state
+extractState _                   = Nothing
