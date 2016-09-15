@@ -25,8 +25,6 @@ library
                      , mtl
                      , random, random-shuffle
                      , lens
-                     
-                     , QuickCheck
   exposed-modules:     Game.MetaGame
                      , Game.Innovation.Types
                      , Game.Innovation.Actions
@@ -34,7 +32,6 @@ library
                      , Game.Innovation.Actions.Basic
                      , Game.Innovation.Rules
                      , Game.Innovation.Cards
-
 
 executable innovation
   main-is:             Main.hs

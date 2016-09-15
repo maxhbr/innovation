@@ -29,40 +29,40 @@ import Game.Innovation.Rules
 -- create an empty game using a given seed
 data Init = Init Int
           deriving (Show, Read)
-instance UserActionC State Init where
-  getTransition' Admin (Init seed) Q0 = W.writer ( Right $ Prepare $ mkInitialState cards seed
-                                                 , [T.pack . \case
-                                                      Admin -> "Init [with seed " ++ show seed ++ "]"
-                                                      U _  -> "Init [with seed only visible for admin]"])
-  getTransition' _ _ _                  = fail "Game was already inited or action was not authorized"
-  isMetaAction' = const True
+-- instance ActionC State Init where
+--   toTransition' Admin (Init seed) Q0 = W.writer ( Right $ Prepare $ mkInitialState cards seed
+--                                                 , [T.pack . \case
+--                                                      Admin -> "Init [with seed " ++ show seed ++ "]"
+--                                                      U _  -> "Init [with seed only visible for admin]"])
+--   toTransition' _ _ _                  = fail "Game was already inited or action was not authorized"
+--   isMetaAction' = const True
 
 -- | AddPlayer
 -- add an player with a given playerId to the game
 data AddPlayer = AddPlayer String
                deriving (Show, Read)
-instance UserActionC State AddPlayer where
-  getTransition' Admin (AddPlayer playerId) (Prepare state) = W.writer ( Right $
-                                                                         Prepare $
-                                                                         state { _players     = mkPlayer playerId : view players state
-                                                                               , _playerOrder = U playerId : view playerOrder state }
-                                                                       , [T.pack . const ("AddUser " ++ playerId)])
-  -- allow user to add itself to a game?
-  getTransition' _ _ _                                        = fail "Game was not in prepare state or action was not authorized"
-  isMetaAction' = const True
+-- instance ActionC State AddPlayer where
+--   toTransition' Admin (AddPlayer playerId) (Prepare state) = W.writer ( Right $
+--                                                                         Prepare $
+--                                                                         state { _players     = mkPlayer playerId : view players state
+--                                                                               , _playerOrder = U playerId : view playerOrder state }
+--                                                                       , [T.pack . const ("AddUser " ++ playerId)])
+--   -- allow user to add itself to a game?
+--   toTransition' _ _ _                                        = fail "Game was not in prepare state or action was not authorized"
+--   isMetaAction' = const True
 
 -- | StartGame
 -- finish preperations of the game
 data StartGame = StartGame
                deriving (Show, Read)
-instance UserActionC State StartGame where
-  getTransition' Admin _ (Prepare state) = W.writer ( Right state
-                                                    , [T.pack . const "StartGame"])
-  getTransition' _ _ _                   = fail "Game was not in prepare state or action was not authorized"
-  isMetaAction' = const True
+-- instance ActionC State StartGame where
+--   toTransition' Admin _ (Prepare state) = W.writer ( Right state
+--                                                    , [T.pack . const "StartGame"])
+--   toTransition' _ _ _                   = fail "Game was not in prepare state or action was not authorized"
+--   isMetaAction' = const True
 
--- data DropPlayer = DropPlayer UserId
---                 deriving (Show, Read)
+data DropPlayer = DropPlayer UserId
+                deriving (Show, Read)
 
--- data Undo = Undo
---           deriving (Show, Read)
+data Undo = Undo
+          deriving (Show, Read)
