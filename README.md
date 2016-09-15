@@ -41,28 +41,33 @@ where
 - `age1:agriculture:1` is an id of a dogma on a card
 
 The internal representation might be of type 
-```
-type History = [(UserId,UserAction)]
+```haskell
+type History = [UserAction State]
 ```
 and might look like
-```
-admin, p1, p2 :: UserId
+```haskell
+Admin, p1, p2 :: UserId
+p1 = U "player1"
+p2 = U "Player2"
 seed :: Integer
+seed = 12345
 
-[(admin, Init seed)
-,(admin, AddPlayer p1)
-,(admin, AddPlayer p2)
-,(p2, Play age1:agriculture)
-,(p1, Play age1:clothing)
-,(p2, Draw)
-,(p1, Draw)
-,(p1, Activate Yellow)
-,(p2. Choose age1:someCard)
-,(p2, Play age1:codeOfLaws)
-,(p2, Activate Purple)
-,(p1, Dominate Age1)
-,(p1, Draw)
-,[...]
+[ Admin `does` Init seed
+, Admin `does` AddPlayer p1
+, Admin `does` AddPlayer p2
+, Admin `does` StartGame
+, p2    `chooses` age1:agriculture
+, p1    `chooses` age1:clothing
+, Admin `does` DeterminesTurnOrder
+, p2    `does` Draw
+, p1    `does` Draw
+, p1    `does` Activate Yellow
+, p2    `does` Choose age1:someCard
+, p2    `does` Play age1:codeOfLaws
+, p2    `does` Activate Purple
+, p1    `does` Dominate Age1
+, p1    `does` Draw
+, [...]
 ]
 ```
 
