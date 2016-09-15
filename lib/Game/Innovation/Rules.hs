@@ -10,28 +10,30 @@ import Data.Maybe
 import Control.Monad.Writer (Writer)
 import qualified Control.Monad.Writer as W
 import Data.Proxy
+import Control.Lens
 
 import Game.MetaGame
 import Game.Innovation.Types
 import Game.Innovation.Cards
 
-advancePlayerOrder :: PlayerOrder -> PlayerOrder
-advancePlayerOrder []                       = []
-advancePlayerOrder [p]                      = [p]
-advancePlayerOrder (p1:(p2:ps)) | p1 == p2  = p2:ps
-                                | otherwise = p2:ps ++ [p1,p1]
-
 --------------------------------------------------------------------------------
 -- Helper functions
 --------------------------------------------------------------------------------
+
+getStackFromMapBy :: (Ord k) => k -> Map k Stack -> Stack
+getStackFromMapBy = Map.findWithDefault emptyStack
 
 getPlayerByUserId :: Maybe UserId -> State -> Maybe Player
 getPlayerByUserId Nothing _           = Nothing
 getPlayerByUserId (Just userId) state = undefined
 
+--------------------------------------------------------------------------------
+-- Getter for ages
+--------------------------------------------------------------------------------
+
 getCurrentAge :: Player -> Age
 getCurrentAge player = let
-  currentAges = (map (fromEnum . age . head) . filter (not . null) . Map.elems) $ getStacks player
+  currentAges = (map (fromEnum . view age . head) . filter (not . null) . Map.elems) $ _stacks player
   in if currentAges /= []
      then toEnum $ maximum currentAges
      else Age1
@@ -42,5 +44,41 @@ getCurrentDrawAge player state = if null agesAboveWithCards
                                  else Just $ head agesAboveWithCards
   where
     currentAge         = getCurrentAge player
-    drawStacks         = getDrawStacks state
-    agesAboveWithCards = Map.keys $ Map.filterWithKey (\ age stack -> age >= currentAge && stack /= []) drawStacks
+    currentDrawStacks  = view drawStacks state
+    agesAboveWithCards = Map.keys $
+                         Map.filterWithKey (\ age stack -> age >= currentAge
+                                                        && stack /= []) currentDrawStacks
+
+--------------------------------------------------------------------------------
+-- Getter for visible productions and related symbols
+--------------------------------------------------------------------------------
+
+getSymbols :: Player -> Map Symbol Int
+getSymbols player = Map.fromListWith (+) $
+                    zip playersSymbolsList (repeat 1)
+  where
+    playersSymbolsList = map _prodSymbol $
+                         filter isSymbolProduction $
+                         getProductions player
+
+getProductions :: Player -> [Production]
+getProductions player = concatMap (`getProductionsForColor` player) colors
+
+getProductionsForColor :: Color -> Player -> [Production]
+getProductionsForColor color player = getProductionsForStack stackOfColor splayStateOfColor
+  where
+    stackOfColor      = getStackFromMapBy color $ view stacks player
+    splayStateOfColor = Map.findWithDefault NotSplayed color $ view splayStates player
+
+getProductionsForStack :: Stack -> SplayState -> [Production]
+getProductionsForStack [] _              = []
+getProductionsForStack [card] _          = map ((\v -> v (view productions card)) . view)
+                                               [ tlProd, blProd, bcProd, brProd ]
+getProductionsForStack (c:cs) splayState = getProductionsForStack [c] splayState ++ prodOfInactive
+  where
+    prodOfInactive = concatMap (\card -> map ((\v -> v (view productions card)) . view) $
+                                         getLenses splayState) cs
+    getLenses SplayedLeft  = [ brProd ]
+    getLenses SplayedRight = [ tlProd, blProd ]
+    getLenses SplayedUp    = [ blProd, bcProd, brProd ]
+    getLenses NotSplayed   = []

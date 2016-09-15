@@ -14,36 +14,12 @@ import qualified Data.Text as T
 import Data.Maybe
 import Control.Monad.Writer (Writer)
 import qualified Control.Monad.Writer as W
-import System.Random
-import System.Random.Shuffle (shuffle')
+import Control.Lens
 
 import Game.MetaGame
 import Game.Innovation.Types
 import Game.Innovation.Cards
 import Game.Innovation.Rules
-
---------------------------------------------------------------------------------
--- Generators
---------------------------------------------------------------------------------
-
-mkPlayer :: String -> Player
-mkPlayer playerId = Player (U playerId)
-                           (Map.fromList $ zip colors $ repeat [])
-                           (Map.fromList $ zip colors $ repeat NotSplayed)
-                           []
-                           []
-                           []
-
-mkInitialState :: Int -> State
-mkInitialState seed = State permutatedDrawStack
-                            []
-                            []
-                            []
-  where
-    stdGen = mkStdGen seed
-    shuffle []    = []
-    shuffle stack = shuffle' stack (length stack) stdGen
-    permutatedDrawStack = Map.map shuffle cards
 
 --------------------------------------------------------------------------------
 -- Admin actions
@@ -54,7 +30,7 @@ mkInitialState seed = State permutatedDrawStack
 data Init = Init Int
           deriving (Show, Read)
 instance UserActionC State Init where
-  getTransition' Admin (Init seed) Q0 = W.writer ( Right $ Prepare $ mkInitialState seed
+  getTransition' Admin (Init seed) Q0 = W.writer ( Right $ Prepare $ mkInitialState cards seed
                                                  , [T.pack . \case
                                                       Admin -> "Init [with seed " ++ show seed ++ "]"
                                                       U _  -> "Init [with seed only visible for admin]"])
@@ -68,8 +44,8 @@ data AddPlayer = AddPlayer String
 instance UserActionC State AddPlayer where
   getTransition' Admin (AddPlayer playerId) (Prepare state) = W.writer ( Right $
                                                                          Prepare $
-                                                                         state { getPlayers     = mkPlayer playerId : getPlayers state
-                                                                               , getPlayerOrder = (U playerId) : getPlayerOrder state }
+                                                                         state { _players     = mkPlayer playerId : view players state
+                                                                               , _playerOrder = U playerId : view playerOrder state }
                                                                        , [T.pack . const ("AddUser " ++ playerId)])
   -- allow user to add itself to a game?
   getTransition' _ _ _                                        = fail "Game was not in prepare state or action was not authorized"

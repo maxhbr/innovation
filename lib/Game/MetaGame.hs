@@ -4,10 +4,11 @@
 {-# LANGUAGE CPP #-}
 module Game.MetaGame
        ( UserId (..)
+       , Log (..)
        , UserC (..)
        , StateC (..)
        , UserActionC (..), UserAction, does'
-       , Game, play
+       , Game, play'
        , getLog, printLog)
     where
 
@@ -19,10 +20,10 @@ import Control.Monad.Writer (Writer)
 import qualified Control.Monad.Writer as W
 
 --------------------------------------------------------------------------------
--- Game actions
+-- Basic data and type declerations
 --------------------------------------------------------------------------------
 
-data UserId = U { getUserId' :: String }
+data UserId = U { unpackUserId :: String }
             | Admin
             deriving (Show,Eq,Read)
 type Log = UserId -> Text
@@ -32,6 +33,11 @@ type Transition s = (s -> LogWriter (Either Text s))
 fail :: Text -> Writer [Log] (Either Text s)
 fail errorMsg = W.writer ( Left errorMsg
                          , [const $  T.concat ["ERROR: ", errorMsg]] )
+
+--------------------------------------------------------------------------------
+-- Class definitions
+--------------------------------------------------------------------------------
+
 class UserC user where
   getUserId :: user -> UserId
   isUserId :: UserId -> user -> Bool
@@ -39,20 +45,28 @@ class UserC user where
 
 class StateC state where
   getCurrentPlayer :: state -> UserId
+  advancePlayerOrder :: state -> state
   -- getWinner :: state -> Maybe UserId
 
-class (StateC state, Read action, Show action) => UserActionC state action where
+class (StateC state, Read action, Show action) =>
+      UserActionC state action where
   getTransition' :: UserId -> action -> Transition state
   isMetaAction' :: action -> Bool
   isMetaAction' = const False
 
-data UserAction state = forall action. UserActionC state action => UserAction { getActingPlayer :: UserId
-                                                                              , getAction :: action }
-does' :: UserActionC state action => Proxy state -> UserId -> action -> UserAction state
+data UserAction state = forall action.
+                        UserActionC state action =>
+                        UserAction { getActingPlayer :: UserId
+                                   , getAction :: action }
+
+does' :: UserActionC state action =>
+         Proxy state -> UserId -> action -> UserAction state
 does' _ = UserAction
 
 #if false
-instance forall action. (UserActionC state action) => Read (UserAction state) where
+instance forall action.
+         (UserActionC state action) =>
+         Read (UserAction state) where
   -- readsPrec :: Int -> ReadS a
   readsPrec _ input = [(UserAction $ read input, "")]
 #endif
@@ -67,28 +81,28 @@ instance Eq (UserAction s) where
 type Game state = [UserAction state]
 
 --------------------------------------------------------------------------------
--- helper functions
---------------------------------------------------------------------------------
-
-getTransition :: UserAction state -> Transition state
-getTransition (UserAction userId action) = getTransition' userId action
-
---------------------------------------------------------------------------------
 -- play
 --------------------------------------------------------------------------------
 
-play :: state -> Game state -> (Either Text state, [Log])
-play state as = W.runWriter $ play' state as
+play' :: state -> Game state -> (Either Text state, [Log])
+play' state as = W.runWriter $ play'' state as
   where
-    play' :: state -> Game state -> LogWriter (Either Text state)
-    play' state (a:as) = do
+    getTransition :: UserAction state -> Transition state
+    getTransition (UserAction userId action) = getTransition' userId action
+
+    play'' :: state -> Game state -> LogWriter (Either Text state)
+    play'' state (a:as) = do
       result <- getTransition a state
       case result of
-        Right newState -> play' newState as
+        Right newState -> play'' newState as
         Left errorMsg  -> pure $ Left errorMsg
-    play' state []    = pure $ Right state
+    play'' state []    = pure $ Right state
 
-getLog :: (a, [Log]) -> UserId -> Text
+--------------------------------------------------------------------------------
+-- debug helper functions
+--------------------------------------------------------------------------------
+
+getLog :: (a, [Log]) -> Log
 getLog (_, logs) userId = T.intercalate "\n" $ map (\f -> f userId) logs
 
 printLog :: (a, [Log]) -> UserId -> IO()

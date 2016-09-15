@@ -14,6 +14,7 @@ import Data.Maybe
 import Control.Monad.Writer (Writer)
 import qualified Control.Monad.Writer as W
 import Data.Proxy
+import Control.Lens
 
 import Game.MetaGame
 import Game.Innovation.Types

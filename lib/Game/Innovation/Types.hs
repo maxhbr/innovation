@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Game.Innovation.Types
        where
 
@@ -7,6 +8,9 @@ import qualified Data.Map as Map
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Proxy
+import System.Random
+import System.Random.Shuffle (shuffle')
+import Control.Lens
 
 import Game.MetaGame
 
@@ -15,17 +19,17 @@ import Game.MetaGame
 --------------------------------------------------------------------------------
 
 data Color = Blue | Purple | Red | Yellow | Green
-  deriving (Eq,Show,Read,Enum,Ord)
+  deriving (Eq,Show,Read,Enum,Ord,Bounded)
 colors :: [Color]
-colors = map (\n -> toEnum n :: Color) [0..4]
+colors = [minBound ..]
 
 data Age = Age1 | Age2 | Age3 | Age4 | Age5 | Age6 | Age7 | Age8 | Age9 | Age10
-  deriving (Eq,Show,Read,Enum,Ord)
+  deriving (Eq,Show,Read,Enum,Ord,Bounded)
 ages :: [Age]
-ages = map (\n -> toEnum n :: Age) [0..9]
+ages =  [minBound ..]
 
 data Symbol = Castle | Tree | Coins | Bulb | Factory | Clock
-  deriving (Eq,Show,Read,Enum,Ord)
+  deriving (Eq,Show,Read,Enum,Ord,Bounded)
 
 --------------------------------------------------------------------------------
 -- Actions
@@ -35,12 +39,6 @@ data Action
   =  RawAction String
   deriving (Eq,Show)
 
-drawAndDo :: (Card -> Action) -> Action
-drawAndDo = undefined
-
-drawFromAndDo :: (Card -> Action) -> Age -> Action
-drawFromAndDo = undefined
-
 --------------------------------------------------------------------------------
 -- Dogmas
 --------------------------------------------------------------------------------
@@ -49,7 +47,7 @@ data Selector
   = Hand
   | Influence
   | StackOfColor Color
-  | TheCard Card
+  -- -| TheCard Card
   -- Selector combinators
   | OrSelector [Selector]
   | AndSelector [Selector]
@@ -82,8 +80,14 @@ data Dogma
 
 data Production
   = None
-  | Produce Symbol
+  | Produce { _prodSymbol :: Symbol }
   deriving (Eq,Show)
+makeLenses ''Production
+
+isSymbolProduction :: Production -> Bool
+isSymbolProduction (Produce _) = True
+isSymbolProduction _           = False
+
 
 --   +----------------+
 --   | tl             |
@@ -91,44 +95,48 @@ data Production
 --   | bl    bc    br |
 --   +----------------+
 data Productions
-  = Productions { tlProd :: Production
-                , blProd :: Production
-                , bcProd :: Production
-                , brProd :: Production }
+  = Productions { _tlProd :: Production
+                , _blProd :: Production
+                , _bcProd :: Production
+                , _brProd :: Production }
   deriving (Eq,Show)
+makeLenses ''Productions
 
 type CardId = String
 data Card
-  = Card { color       :: Color
-         , age         :: Age
-         , productions :: Productions
-         , dogmas      :: [Dogma] }
+  = Card { _color       :: Color
+         , _age         :: Age
+         , _productions :: Productions
+         , _dogmas      :: [Dogma] }
   deriving (Eq,Show)
+makeLenses ''Card
 
 --------------------------------------------------------------------------------
 -- Players
 --------------------------------------------------------------------------------
 
 type Stack = [Card]
+emptyStack = [] :: Stack
 
 data SplayState
   = SplayedLeft
   | SplayedRight
   | SplayedUp
   | NotSplayed
-  deriving (Eq,Show)
+  deriving (Eq,Show,Enum,Bounded)
 
 data Player
-  = Player { getPlayerId    :: UserId
-           , getStacks      :: Map Color Stack
-           , getSplayStates :: Map Color SplayState
-           , getInfluence   :: Stack
-           , getDominations :: Stack
-           , getHand        :: Stack }
+  = Player { _playerId    :: UserId
+           , _stacks      :: Map Color Stack
+           , _splayStates :: Map Color SplayState
+           , _influence   :: Stack
+           , _dominations :: Stack
+           , _hand        :: Stack }
   deriving (Show)
+makeLenses ''Player
 
 instance UserC Player where
-  getUserId = getPlayerId
+  getUserId = _playerId
 
 --------------------------------------------------------------------------------
 -- Game state
@@ -141,21 +149,62 @@ data Choices -- TODO
 data State
   = Q0
   | Prepare State
-  | State { getDrawStacks  :: Map Age Stack
-          , getPlayers     :: [Player]
-          , getPlayerOrder :: PlayerOrder
-          , getHistory     :: Game State }
-  | WaitForChoices { choices :: [Choices]
-                   , state   :: State }
+  | State { _drawStacks  :: Map Age Stack
+          , _players     :: [Player]
+          , _playerOrder :: PlayerOrder
+          , _history     :: Game State }
+  | WaitForChoices { _choices            :: [Choices]
+                   , _stateBeforeCohices :: State }
   | FinishedGame State
+makeLenses ''State
 
-does :: UserActionC State action => UserId -> action -> UserAction State
+does :: UserActionC State action =>
+        UserId -> action -> UserAction State
 does = does' (Proxy :: Proxy State)
+
+play :: Game State -> (Either Text State, [Log])
+play = play' Q0
 
 instance StateC State where
   getCurrentPlayer  Q0                              = Admin
   getCurrentPlayer (Prepare _)                      = Admin
   getCurrentPlayer (FinishedGame state)             = getCurrentPlayer state
-  getCurrentPlayer State { getPlayerOrder = order } = if null order
-                                                      then Admin
-                                                      else head order
+  getCurrentPlayer State { _playerOrder = order } = if null order
+                                                    then Admin
+                                                    else head order
+
+  advancePlayerOrder Q0                     = Q0
+  advancePlayerOrder s@(Prepare _)          = s
+  advancePlayerOrder s@(FinishedGame _)     = s
+  advancePlayerOrder s@(WaitForChoices _ _) = s
+  advancePlayerOrder s                      = over playerOrder advancePlayerOrder' s
+    where
+      advancePlayerOrder' :: PlayerOrder -> PlayerOrder
+      advancePlayerOrder' []                       = []
+      advancePlayerOrder' [p]                      = [p]
+      advancePlayerOrder' (p1:(p2:ps)) | p1 == p2  = p2:ps
+                                       | otherwise = p2:ps ++ [p1,p1]
+
+
+--------------------------------------------------------------------------------
+-- Generators
+--------------------------------------------------------------------------------
+
+mkPlayer :: String -> Player
+mkPlayer playerId = Player (U playerId)
+                           (Map.fromList $ zip colors $ repeat [])
+                           (Map.fromList $ zip colors $ repeat NotSplayed)
+                           []
+                           []
+                           []
+
+mkInitialState :: Map Age Stack -> Int -> State
+mkInitialState initialDrawStacks seed = State permutatedDrawStack
+                                        []
+                                        []
+                                        []
+  where
+    stdGen = mkStdGen seed
+    shuffle []    = []
+    shuffle stack = shuffle' stack (length stack) stdGen
+    permutatedDrawStack = Map.map shuffle initialDrawStacks

@@ -25,10 +25,10 @@ cards = Map.fromList
 --------------------------------------------------------------------------------
 
 agriculture =
-  Card { color       = Yellow
-       , age         = Age1
-       , productions = Productions None (Produce Tree) (Produce Tree) (Produce Tree)
-       , dogmas      =
+  Card { _color       = Yellow
+       , _age         = Age1
+       , _productions = Productions None (Produce Tree) (Produce Tree) (Produce Tree)
+       , _dogmas      =
          [Tree `Dogma` (RawDescription "You may recycle a card from your Hand. If you dou, draw and score a card of value one higher than the card you recycled")]
        }
 --------------------------------------------------------------------------------
