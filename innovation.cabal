@@ -22,7 +22,7 @@ library
   build-depends:       base
                      , containers
                      , text
-                     , mtl
+                     , mtl, transformers
                      , random, random-shuffle
                      , lens
   exposed-modules:     Game.MetaGame
@@ -61,7 +61,7 @@ Test-Suite innovationLibTest
     build-depends:    base
                      , containers
                      , text
-                     , mtl
+                     , mtl, transformers
                      , random, random-shuffle
                      , lens
                      

@@ -136,6 +136,9 @@ data Player
   deriving (Show)
 makeLenses ''Player
 
+instance Eq Player where
+  p1 == p2 = _playerId p1 == _playerId p2
+
 instance UserC Player where
   getUserId = _playerId
 
@@ -166,12 +169,12 @@ does = does' (Proxy :: Proxy State)
 instance StateC State where
   initialState = Q0
 
-  getCurrentPlayer  Q0                              = Admin
-  getCurrentPlayer (Prepare _)                      = Admin
-  getCurrentPlayer (FinishedGame state)             = getCurrentPlayer state
-  getCurrentPlayer State { _playerOrder = order } = if null order
-                                                    then Admin
-                                                    else head order
+  getCurrentPlayer'  Q0                              = Admin
+  getCurrentPlayer' (Prepare _)                      = Admin
+  getCurrentPlayer' (FinishedGame state)             = getCurrentPlayer' state
+  getCurrentPlayer' State { _playerOrder = order } = if null order
+                                                     then Admin
+                                                     else head order
 
   advancePlayerOrder Q0                     = Q0
   advancePlayerOrder s@(Prepare _)          = s
