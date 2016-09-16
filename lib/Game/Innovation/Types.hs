@@ -35,38 +35,39 @@ data Symbol = Castle | Tree | Coins | Bulb | Factory | Clock
 -- Actions
 --------------------------------------------------------------------------------
 
-data Action
-  =  RawAction String
-  deriving (Eq,Show)
+-- data Action
+--   =  RawAction String
+--   deriving (Eq,Show)
 
---------------------------------------------------------------------------------
--- Dogmas
---------------------------------------------------------------------------------
+-- --------------------------------------------------------------------------------
+-- -- Dogmas
+-- --------------------------------------------------------------------------------
 
-data Selector
-  = Hand
-  | Influence
-  | StackOfColor Color
-  -- -| TheCard Card
-  -- Selector combinators
-  | OrSelector [Selector]
-  | AndSelector [Selector]
-  | OneOf Selector
-  | HalfOf Selector
-  | AllOf Selector
-  | UpTo Selector
-  -- Raw
-  | RawSelector String
-  deriving (Eq,Show)
+-- data Selector
+--   = Hand
+--   | Influence
+--   | StackOfColor Color
+--   -- -| TheCard Card
+--   -- Selector combinators
+--   | OrSelector [Selector]
+--   | AndSelector [Selector]
+--   | OneOf Selector
+--   | HalfOf Selector
+--   | AllOf Selector
+--   | UpTo Selector
+--   -- Raw
+--   | RawSelector String
+--   deriving (Eq,Show)
 
 data DogmaDescription
-  = D Action
-  | DD Action Selector
-  -- DogmaDescription combinators
-  | YouMay DogmaDescription
-  | AndAlsoDo DogmaDescription DogmaDescription
-  -- Raw
-  | RawDescription String
+  =
+  --   D Action
+  -- | DD Action Selector
+  -- -- DogmaDescription combinators
+  -- | YouMay DogmaDescription
+  -- | AndAlsoDo DogmaDescription DogmaDescription
+  -- -- Raw
+    RawDescription String
   deriving (Eq,Show)
 
 data Dogma
@@ -135,6 +136,9 @@ data Player
   deriving (Show)
 makeLenses ''Player
 
+instance Eq Player where
+  p1 == p2 = _playerId p1 == _playerId p2
+
 instance UserC Player where
   getUserId = _playerId
 
@@ -158,20 +162,19 @@ data State
   | FinishedGame State
 makeLenses ''State
 
-does :: UserActionC State action =>
-        UserId -> action -> UserAction State
+does :: ActionC State actionToken =>
+        UserId -> actionToken -> Action State
 does = does' (Proxy :: Proxy State)
 
-play :: Game State -> (Either Text State, [Log])
-play = play' Q0
-
 instance StateC State where
-  getCurrentPlayer  Q0                              = Admin
-  getCurrentPlayer (Prepare _)                      = Admin
-  getCurrentPlayer (FinishedGame state)             = getCurrentPlayer state
-  getCurrentPlayer State { _playerOrder = order } = if null order
-                                                    then Admin
-                                                    else head order
+  initialState = Q0
+
+  getCurrentPlayer'  Q0                              = Admin
+  getCurrentPlayer' (Prepare _)                      = Admin
+  getCurrentPlayer' (FinishedGame state)             = getCurrentPlayer' state
+  getCurrentPlayer' State { _playerOrder = order } = if null order
+                                                     then Admin
+                                                     else head order
 
   advancePlayerOrder Q0                     = Q0
   advancePlayerOrder s@(Prepare _)          = s
@@ -202,7 +205,7 @@ mkInitialState :: Map Age Stack -> Int -> State
 mkInitialState initialDrawStacks seed = State permutatedDrawStack
                                         []
                                         []
-                                        []
+                                        (G [])
   where
     stdGen = mkStdGen seed
     shuffle []    = []

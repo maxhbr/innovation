@@ -1,109 +1,194 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE CPP #-}
 module Game.MetaGame
-       ( UserId (..)
-       , Log (..)
+       ( UserId (..), isAdmin
        , UserC (..)
-       , StateC (..)
-       , UserActionC (..), UserAction, does'
-       , Game, play'
-       , getLog, printLog)
-    where
+       , StateC (..), GameResult (..)
+       , Log (..), viewLog
+       , TransitionType, Transition (..)
+       , ActionC (..), Action, does'
+       , Game (..)
+       , play, extractGameResult, extractLog, extractState
+       , getCurrentPlayer
+       , log, logForMe, logError
+       , onlyAdminIsAllowed
+       ) where
 
-import Data.Proxy
-import Data.Text (Text)
+import           Prelude hiding (log)
+import           Data.Proxy
+import           Data.Text (Text)
 import qualified Data.Text as T
-import Data.Maybe
-import Control.Monad.Writer (Writer)
-import qualified Control.Monad.Writer as W
+import qualified Data.Text.IO as TIO
+import           Data.Maybe
+import           Data.Monoid
+import           Control.Monad.Identity
+import           Control.Monad.Trans.Class
+import           Control.Monad.Trans.Writer (WriterT)
+import qualified Control.Monad.Trans.Writer as W
+import           Control.Monad.Trans.Except (ExceptT)
+import qualified Control.Monad.Trans.Except as E
+import           Control.Monad.Trans.State.Lazy (StateT)
+import qualified Control.Monad.Trans.State.Lazy as S
 
 --------------------------------------------------------------------------------
--- Basic data and type declerations
+-- * Basic data and type declerations
 --------------------------------------------------------------------------------
 
-data UserId = U { unpackUserId :: String }
+--------------------------------------------------------------------------------
+-- ** Users and user-related stuff
+
+data UserId = U String
             | Admin
             deriving (Show,Eq,Read)
-type Log = UserId -> Text
-type LogWriter s = Writer [Log] s
-type Transition s = (s -> LogWriter (Either Text s))
 
-fail :: Text -> Writer [Log] (Either Text s)
-fail errorMsg = W.writer ( Left errorMsg
-                         , [const $  T.concat ["ERROR: ", errorMsg]] )
-
---------------------------------------------------------------------------------
--- Class definitions
---------------------------------------------------------------------------------
+isAdmin :: UserId -> Bool
+isAdmin Admin = True
+isAdmin _     = False
 
 class UserC user where
   getUserId :: user -> UserId
   isUserId :: UserId -> user -> Bool
   isUserId userId user = getUserId user == userId
 
+--------------------------------------------------------------------------------
+-- ** State
+
 class StateC state where
-  getCurrentPlayer :: state -> UserId
+  initialState :: state
+  getCurrentPlayer' :: state -> UserId
   advancePlayerOrder :: state -> state
-  -- getWinner :: state -> Maybe UserId
 
-class (StateC state, Read action, Show action) =>
-      UserActionC state action where
-  getTransition' :: UserId -> action -> Transition state
-  isMetaAction' :: action -> Bool
-  isMetaAction' = const False
+data GameResult = NoWinner
+                | WinningOrder [UserId]
+                deriving (Show,Eq,Read)
 
-data UserAction state = forall action.
-                        UserActionC state action =>
-                        UserAction { getActingPlayer :: UserId
-                                   , getAction :: action }
+--------------------------------------------------------------------------------
+-- ** Transitions
 
-does' :: UserActionC state action =>
-         Proxy state -> UserId -> action -> UserAction state
-does' _ = UserAction
+newtype Log = Log (UserId -> Text)
 
-#if false
-instance forall action.
-         (UserActionC state action) =>
-         Read (UserAction state) where
-  -- readsPrec :: Int -> ReadS a
-  readsPrec _ input = [(UserAction $ read input, "")]
-#endif
+viewLog :: UserId -> Log -> Text
+viewLog userId (Log log) = log userId
 
-instance Show (UserAction state) where
-  show (UserAction Admin action)      = show action
-  show (UserAction (U userId) action) = userId ++ ": " ++ show action
+instance Monoid Log where
+  mempty                    = Log $ const (T.pack "")
+  mappend (Log l1) (Log l2) = Log $ \userId -> let
+    lo1 = l1 userId
+    lo2 = l2 userId
+    sep = T.pack $ if (not . T.null) lo1 && (not . T.null) lo2
+                   then "\n"
+                   else ""
+    in T.concat [ l1 userId, sep ,l2 userId ]
 
-instance Eq (UserAction s) where
+type TransitionType s r = StateT s (ExceptT Text (WriterT Log Identity)) r
+
+data Transition s = T { unpackTransition :: TransitionType s GameResult}
+
+instance StateC state =>
+         Monoid (Transition state) where
+  mempty                = T $ return NoWinner
+  mappend (T t1) (T t2) = T $ t1 >> t2
+
+--------------------------------------------------------------------------------
+-- ** ActionTokens and Actions
+
+class (StateC state, Read actionToken, Show actionToken) =>
+      ActionC state actionToken where
+  toTransition' :: UserId -> actionToken -> Transition state
+
+data Action state = forall actionToken.
+                    ActionC state actionToken =>
+                    Action { getActingPlayer :: UserId
+                           , getToken :: actionToken }
+
+instance Show (Action state) where
+  show (Action Admin action)      = show action
+  show (Action (U userId) action) = userId ++ ": " ++ show action
+
+-- | The `Eq` instance of `Action state` is deriven from the `Show` instance
+instance Eq (Action state) where
   act1 == act2 = show act1 == show act2
 
-type Game state = [UserAction state]
+actionToTransition :: Action state -> Transition state
+actionToTransition (Action userId actionToken) = toTransition' userId actionToken
+
+does' :: ActionC state actionToken =>
+        Proxy state -> UserId -> actionToken -> Action state
+does' _ = Action
 
 --------------------------------------------------------------------------------
--- play
---------------------------------------------------------------------------------
+-- ** Game
 
-play' :: state -> Game state -> (Either Text state, [Log])
-play' state as = W.runWriter $ play'' state as
-  where
-    getTransition :: UserAction state -> Transition state
-    getTransition (UserAction userId action) = getTransition' userId action
-
-    play'' :: state -> Game state -> LogWriter (Either Text state)
-    play'' state (a:as) = do
-      result <- getTransition a state
-      case result of
-        Right newState -> play'' newState as
-        Left errorMsg  -> pure $ Left errorMsg
-    play'' state []    = pure $ Right state
+newtype Game state = G [Action state]
 
 --------------------------------------------------------------------------------
--- debug helper functions
+-- * play
 --------------------------------------------------------------------------------
 
-getLog :: (a, [Log]) -> Log
-getLog (_, logs) userId = T.intercalate "\n" $ map (\f -> f userId) logs
+type PlayResult state = (Either Text (GameResult, state), Log)
 
-printLog :: (a, [Log]) -> UserId -> IO()
-printLog gs u = putStrLn $ T.unpack $ getLog gs u
+play :: StateC state =>
+        Game state -> PlayResult state
+play (G game) = let
+  fullTransition = unpackTransition $
+                   mconcat $
+                   map actionToTransition game
+  in (runIdentity .
+      W.runWriterT .
+      E.runExceptT .
+      S.runStateT fullTransition) initialState
+
+--------------------------------------------------------------------------------
+-- ** related helper
+
+extractGameResult :: PlayResult state -> GameResult
+extractGameResult (Right (result,_),_) = result
+extractGameResult _                    = NoWinner
+
+extractLog :: PlayResult state -> Log
+extractLog (_,log) = log
+
+extractState :: PlayResult state -> Maybe state
+extractState (Right (_,state),_) = Just state
+extractState _                   = Nothing
+
+--------------------------------------------------------------------------------
+-- * Other helper
+--------------------------------------------------------------------------------
+
+getCurrentPlayer :: StateC s =>
+                    TransitionType s UserId
+getCurrentPlayer = S.gets getCurrentPlayer'
+
+log :: StateC s =>
+       String -> TransitionType s ()
+log text = do
+    loggingUser <- getCurrentPlayer
+    lift . lift . W.tell .
+      Log .
+      const .
+      T.pack $
+      show loggingUser ++ ": " ++ text
+
+logForMe :: StateC s =>
+            String -> String -> TransitionType s ()
+logForMe textPrivate textPublic = do
+    loggingUser <- getCurrentPlayer
+    lift . lift . W.tell $ Log $
+      \user -> T.pack $
+               ((show loggingUser ++ ": ") ++) $
+               if user == loggingUser || user == Admin
+               then textPrivate
+               else textPublic
+
+logError :: StateC s =>
+            String -> TransitionType s GameResult
+logError error = do
+  lift . lift . W.tell $ Log $ const $ T.pack $ "Error: " ++ error
+  lift . E.throwE $ T.pack error
+  S.state (\s -> (NoWinner, s))
+
+
+onlyAdminIsAllowed :: UserId -> Transition state ->  Transition state
+onlyAdminIsAllowed Admin t = t
+onlyAdminIsAllowed _     _ = T $ lift . E.throwE $ T.pack "Action was not authorized"
