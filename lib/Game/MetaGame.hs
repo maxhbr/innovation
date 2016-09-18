@@ -113,7 +113,7 @@ actionToTransition :: Action state -> Transition state
 actionToTransition (Action userId actionToken) = toTransition' userId actionToken
 
 does' :: ActionC state actionToken =>
-        Proxy state -> UserId -> actionToken -> Action state
+         Proxy state -> UserId -> actionToken -> Action state
 does' _ = Action
 
 --------------------------------------------------------------------------------
@@ -187,7 +187,6 @@ logError error = do
   lift . lift . W.tell $ Log $ const $ T.pack $ "Error: " ++ error
   lift . E.throwE $ T.pack error
   S.state (\s -> (NoWinner, s))
-
 
 onlyAdminIsAllowed :: UserId -> Transition state ->  Transition state
 onlyAdminIsAllowed Admin t = t

@@ -3,16 +3,17 @@
 module Game.Innovation.Types
        where
 
-import Data.Map (Map)
+import           Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Text (Text)
+import           Data.Text (Text)
 import qualified Data.Text as T
-import Data.Proxy
-import System.Random
-import System.Random.Shuffle (shuffle')
-import Control.Lens
+import           Data.Proxy
+import           System.Random
+import           System.Random.Shuffle (shuffle')
+import           Control.Lens (makeLenses, Lens, Lens')
+import qualified Control.Lens as L
 
-import Game.MetaGame
+import           Game.MetaGame
 
 --------------------------------------------------------------------------------
 -- Basic types
@@ -148,39 +149,19 @@ instance UserC Player where
 
 type PlayerOrder = [UserId]
 
-data Choices -- TODO
+data GameState = GameState { _drawStacks  :: Map Age Stack
+                           , _players     :: [Player]
+                           , _playerOrder :: PlayerOrder
+                           , _history     :: Game GameState }
+makeLenses ''GameState
 
-data State
-  = Q0
-  | Prepare State
-  | State { _drawStacks  :: Map Age Stack
-          , _players     :: [Player]
-          , _playerOrder :: PlayerOrder
-          , _history     :: Game State }
-  | WaitForChoices { _choices            :: [Choices]
-                   , _stateBeforeCohices :: State }
-  | FinishedGame State
-makeLenses ''State
+instance StateC GameState where
+  initialState = GameState Map.empty [] [] (G [])
 
-does :: ActionC State actionToken =>
-        UserId -> actionToken -> Action State
-does = does' (Proxy :: Proxy State)
+  getCurrentPlayer'  GameState{ _playerOrder=[] }    = Admin
+  getCurrentPlayer'  GameState{ _playerOrder=order } = head order
 
-instance StateC State where
-  initialState = Q0
-
-  getCurrentPlayer'  Q0                              = Admin
-  getCurrentPlayer' (Prepare _)                      = Admin
-  getCurrentPlayer' (FinishedGame state)             = getCurrentPlayer' state
-  getCurrentPlayer' State { _playerOrder = order } = if null order
-                                                     then Admin
-                                                     else head order
-
-  advancePlayerOrder Q0                     = Q0
-  advancePlayerOrder s@(Prepare _)          = s
-  advancePlayerOrder s@(FinishedGame _)     = s
-  advancePlayerOrder s@(WaitForChoices _ _) = s
-  advancePlayerOrder s                      = over playerOrder advancePlayerOrder' s
+  advancePlayerOrder = L.over playerOrder advancePlayerOrder'
     where
       advancePlayerOrder' :: PlayerOrder -> PlayerOrder
       advancePlayerOrder' []                       = []
@@ -188,6 +169,54 @@ instance StateC State where
       advancePlayerOrder' (p1:(p2:ps)) | p1 == p2  = p2:ps
                                        | otherwise = p2:ps ++ [p1,p1]
 
+--------------------------------------------------------------------------------
+-- (Machine-) state
+--------------------------------------------------------------------------------
+
+data Choices -- TODO
+
+data State
+  = Prepare GameState
+  | WaitForTurn GameState
+  | WaitForChoices [Choices] GameState
+  | FinishedGame GameState
+
+unpackState :: State -> GameState
+unpackState (Prepare gs)          = gs
+unpackState (WaitForTurn gs)      = gs
+unpackState (WaitForChoices _ gs) = gs
+unpackState (FinishedGame gs)     = gs
+
+instance StateC State where
+  initialState = Prepare initialState
+
+  getCurrentPlayer' = getCurrentPlayer' . unpackState
+
+  advancePlayerOrder (Prepare gs)           = Prepare $ advancePlayerOrder gs
+  advancePlayerOrder (WaitForTurn gs)       = WaitForTurn $ advancePlayerOrder gs
+  advancePlayerOrder (WaitForChoices cs gs) = WaitForChoices cs $ advancePlayerOrder gs
+  advancePlayerOrder (FinishedGame gs)      = FinishedGame $ advancePlayerOrder gs
+
+-- drawStacks :: Lens' MachineState (Map Age Stack)
+-- drawStacks = L.lens getter setter
+--   where
+--     getter :: MachineState -> Map Age Stack
+--     getter Q0                           = Map.empty
+--     getter s = _drawStacks $ unpackState s
+
+--     setter :: Map Age Stack -> MachineState -> State
+--     setter dss Q0                            = undefined -- TODO
+--     setter dss (Prepare gameState)           = Prepare $ setter' gameState
+--     setter dss (MachineState gameState)             = State $ setter' gameState
+--     setter dss (WaitForChoices cs gameState) = WaitForChoices cs $ setter' gameState
+--     setter dss (FinishedGame gameState)      = FinishedGame $ setter' gameState
+
+--     setter' :: Map Age Stack -> GameState -> GameState
+--     setter' dss gameState = gameState{ _drawStacks = dss }
+
+does :: ActionC State actionToken =>
+        UserId -> actionToken -> Action State
+does = does' (Proxy :: Proxy State)
 
 --------------------------------------------------------------------------------
 -- Generators
@@ -201,13 +230,11 @@ mkPlayer playerId = Player (U playerId)
                            []
                            []
 
-mkInitialState :: Map Age Stack -> Int -> State
-mkInitialState initialDrawStacks seed = State permutatedDrawStack
-                                        []
-                                        []
-                                        (G [])
+
+shuffleState :: Int -> GameState -> GameState
+shuffleState seed gs = gs{ _drawStacks=permutatedDS }
   where
     stdGen = mkStdGen seed
     shuffle []    = []
     shuffle stack = shuffle' stack (length stack) stdGen
-    permutatedDrawStack = Map.map shuffle initialDrawStacks
+    permutatedDS = Map.map shuffle $ _drawStacks gs
