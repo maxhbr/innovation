@@ -54,7 +54,7 @@ feudalism =
        , _productions = Productions None (Produce Castle) (Produce Tree) (Produce Castle)
        , _dogmas      =
          [Tree `IDemand` (RawDescription "I demand you transfer a card that provides (Castle) from you Hand to my Influence!")
-             , `Dogma`   (RawDescription "You may splay your yellow or purple cards left.")]
+         ,Tree `Dogma`   (RawDescription "You may splay your yellow or purple cards left.")]
        }
 
 --------------------------------------------------------------------------------
@@ -100,5 +100,5 @@ bioengineering =
        , _productions = Productions (Produce Bulb) (Produce Clock) (Produce Clock) None
        , _dogmas      =
          [Tree `Dogma` (RawDescription "Transfer an Active card that provides (Tree) from any other player's Zone to your Influence.")
-             , `Dogma` (RawDescription "If a player has fewer than three (Tree), the single player with the most (Tree) wins.")]
+         ,Tree `Dogma` (RawDescription "If a player has fewer than three (Tree), the single player with the most (Tree) wins.")]
        }

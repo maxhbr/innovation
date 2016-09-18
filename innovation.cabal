@@ -18,7 +18,6 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      lib
   default-language:    Haskell2010
-  exposed-modules:     Game.Innovation
   build-depends:       base
                      , containers
                      , text
@@ -26,6 +25,7 @@ library
                      , random, random-shuffle
                      , lens
   exposed-modules:     Game.MetaGame
+                     , Game.Innovation
                      , Game.Innovation.Types
                      , Game.Innovation.Actions
                      , Game.Innovation.Actions.Admin
