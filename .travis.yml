@@ -1,5 +1,14 @@
 sudo: false
 
+# Choose a lightweight base image; we provide our own build tools.
+language: c
+
+# GHC depends on GMP. You can add other dependencies here as well.
+addons:
+  apt:
+    packages:
+    - libgmp-dev
+
 cache:
   directories:
   - $HOME/.stack
@@ -8,13 +17,15 @@ cache:
   apt: true
 
 before_install:
-  - mkdir -p ~/.local/bin
-  - export PATH=$HOME/.local/bin:$PATH
-  - travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+- mkdir -p ~/.local/bin
+- export PATH=$HOME/.local/bin:$PATH
+- travis_retry curl -L https://www.stackage.org/stack/linux-x86_64 | tar xz --wildcards --strip-components=1 -C ~/.local/bin '*/stack'
+- chmod a+x ~/.local/bin/stack
+- stack --no-terminal setup
 
 install:
-  - ./travis_long stack --no-terminal --skip-ghc-check setup
-  # - ./travis_long stack --no-terminal --skip-ghc-check test --only-snapshot
+- .travis/travis_long stack --no-terminal --skip-ghc-check setup
+# - ./travis_long stack --no-terminal --skip-ghc-check test --only-snapshot
 
 script:
-  - stack --no-terminal --skip-ghc-check test
+- stack --no-terminal --skip-ghc-check test
