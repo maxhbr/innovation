@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Game.Innovation.Types
@@ -104,14 +105,20 @@ data Productions
   deriving (Eq,Show)
 makeLenses ''Productions
 
-type CardId = String
 data Card
-  = Card { _color       :: Color
+  = Card { _title       :: String
+         , _color       :: Color
          , _age         :: Age
          , _productions :: Productions
          , _dogmas      :: [Dogma] }
   deriving (Eq,Show)
 makeLenses ''Card
+
+data CardId = CardId String
+            deriving (Eq, Show, Read)
+
+instance IDAble CardId Card where
+  getId Card{ _title=t, _age=a } = CardId $ show a ++ ":" ++ t :: CardId
 
 --------------------------------------------------------------------------------
 -- Players
@@ -140,8 +147,8 @@ makeLenses ''Player
 instance Eq Player where
   p1 == p2 = _playerId p1 == _playerId p2
 
-instance UserC Player where
-  getUserId = _playerId
+instance IDAble UserId Player where -- UserC Player where
+  getId = _playerId
 
 --------------------------------------------------------------------------------
 -- Game state
@@ -177,6 +184,11 @@ instance StateC State where
       advancePlayerOrder' (p1:(p2:ps)) | p1 == p2  = p2:ps
                                        | otherwise = p2:ps ++ [p1,p1]
 
+  getGameResult state = let
+    ms = _machineState state
+    in case ms of
+      FinishedGame gr -> gr
+      _               -> NoWinner
 
 does :: ActionC State actionToken =>
         UserId -> actionToken -> Action State

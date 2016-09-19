@@ -1,8 +1,10 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Game.MetaGame
-       ( UserId (..), isAdmin
-       , UserC (..)
+       ( IDAble (..)
+       , UserId (..), UserC (..), isAdmin
        , PlayerOrder, StateC (..), GameResult (..)
        , Log (..), viewLog
        , TransitionType, Transition (..)
@@ -34,24 +36,30 @@ import qualified Control.Monad.Trans.State.Lazy as S
 -- * Basic data and type declerations
 --------------------------------------------------------------------------------
 
+class (Eq id, Show id, Read id) =>
+      IDAble id a where
+  getId :: a -> id
+  hasId :: a -> id -> Bool
+  hasId a id = getId a == id
+
 --------------------------------------------------------------------------------
 -- ** Users and user-related stuff
 
 data UserId = U String
             | Admin
             deriving (Show,Eq,Read)
+type UserC user = IDAble UserId user
 
 isAdmin :: UserId -> Bool
 isAdmin Admin = True
 isAdmin _     = False
 
-class UserC user where
-  getUserId :: user -> UserId
-  isUserId :: UserId -> user -> Bool
-  isUserId userId user = getUserId user == userId
-
 --------------------------------------------------------------------------------
 -- ** State
+
+data GameResult = NoWinner
+                | WinningOrder [UserId]
+                deriving (Show,Eq,Read)
 
 type PlayerOrder = [UserId]
 
@@ -59,10 +67,7 @@ class StateC state where
   emptyState :: state
   getCurrentPlayer' :: state -> UserId
   advancePlayerOrder :: state -> state
-
-data GameResult = NoWinner
-                | WinningOrder [UserId]
-                deriving (Show,Eq,Read)
+  getGameResult :: state -> GameResult
 
 --------------------------------------------------------------------------------
 -- ** Transitions

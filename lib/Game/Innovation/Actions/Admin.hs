@@ -26,37 +26,35 @@ import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
 import           Control.Lens
 
-import Game.MetaGame
-import Game.Innovation.Types
-import Game.Innovation.Cards
-import Game.Innovation.Rules
+import           Game.MetaGame
+import           Game.Innovation.Types
+import           Game.Innovation.Cards
+import           Game.Innovation.Rules
 
 --------------------------------------------------------------------------------
 -- Admin actions
 --------------------------------------------------------------------------------
-
-type DeckId = String
 
 -- | Init
 -- Does:
 --  - SetCardDeck
 --  - Shuffle
 --  - DrawDominations
-data Init = Init DeckId Int
+data Init = Init DeckName Int
           deriving (Show, Read)
 instance ActionC State Init where
-  toTransition' userId (Init deckId seed) =
+  toTransition' userId (Init deckName seed) =
     userId `onlyAdminIsAllowed`
     undefined
-    -- T ((toTransition' userId $ SetCardDeck deckId) >>=
+    -- T ((toTransition' userId $ SetCardDeck deckName) >>=
     --    (toTransition' userId $ Shuffle seed) >>=
     --    (toTransition' userId DrawDominations))
 
 -- | SetCardDeck
-data SetCardDeck = SetCardDeck DeckId
+data SetCardDeck = SetCardDeck DeckName
                  deriving (Show, Read)
 instance ActionC State SetCardDeck where
-  toTransition' userId (SetCardDeck deckId) =
+  toTransition' userId (SetCardDeck deckName) =
     userId `onlyAdminIsAllowed`
     T ( do
            undefined
@@ -114,7 +112,7 @@ instance ActionC State StartGame where
            ps <- use players
            if length ps >= 2 && length ps <=4
              then do
-             playerOrder .= map getUserId ps -- FALSE!
+             playerOrder .= map getId ps -- FALSE!
              undefined  -- TODO
              else logError "Numer of players is not valid"
       )

@@ -21,7 +21,7 @@ getAllCurrentCards (State _ drawStacks players _ _) = cardsInDrawStacks ++ cards
     getAllCardsOfPlayer (Player _ stacks _ influence dominations hand) = undefined
 
 getAllStartingCards :: Stack
-getAllStartingCards = getAllCardsFromMap cards
+getAllStartingCards = getAllCardsFromMap $ getDeck "base"
 
 exactlyAllCardsArePresent :: State -> Bool
 exactlyAllCardsArePresent state = undefined

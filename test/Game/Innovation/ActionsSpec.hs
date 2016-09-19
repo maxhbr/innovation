@@ -53,7 +53,7 @@ spec =
       let stateM = extractState playResult
       isJust stateM `shouldBe` True
       let state = fromJust stateM
-      map getUserId (view players state) `shouldBe` [U "user1", U "user2"]
+      map getId (view players state) `shouldBe` [U "user1", U "user2"]
     it "just init + addPlayers + StartGame" $ do
       let game = G [ Admin `does` Init deckId seed
                    , Admin `does` AddPlayer "user1"
@@ -65,7 +65,7 @@ spec =
       let stateM = extractState playResult
       isJust stateM `shouldBe` True
       let state = fromJust stateM
-      map getUserId (view players state) `shouldBe` [U "user1", U "user2"]
+      map getId (view players state) `shouldBe` [U "user1", U "user2"]
 
 main :: IO ()
 main = hspec spec
