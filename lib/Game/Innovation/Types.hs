@@ -1,3 +1,4 @@
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
@@ -15,67 +16,7 @@ import           Control.Lens (makeLenses, Lens, Lens')
 import qualified Control.Lens as L
 
 import           Game.MetaGame
-
---------------------------------------------------------------------------------
--- Basic types
---------------------------------------------------------------------------------
-
-data Color = Blue | Purple | Red | Yellow | Green
-  deriving (Eq,Show,Read,Enum,Ord,Bounded)
-colors :: [Color]
-colors = [minBound ..]
-
-data Age = Age1 | Age2 | Age3 | Age4 | Age5 | Age6 | Age7 | Age8 | Age9 | Age10
-  deriving (Eq,Show,Read,Enum,Ord,Bounded)
-ages :: [Age]
-ages =  [minBound ..]
-
-data Symbol = Castle | Tree | Crown | Bulb | Factory | Clock
-  deriving (Eq,Show,Read,Enum,Ord,Bounded)
-
---------------------------------------------------------------------------------
--- Actions
---------------------------------------------------------------------------------
-
--- data Action
---   =  RawAction String
---   deriving (Eq,Show)
-
--- --------------------------------------------------------------------------------
--- -- Dogmas
--- --------------------------------------------------------------------------------
-
-data Selector
-  = Hand
-  | Influence
-  | StackOfColor Color
---   -- -| TheCard Card
---   -- Selector combinators
---   | OrSelector [Selector]
---   | AndSelector [Selector]
---   | OneOf Selector
---   | HalfOf Selector
---   | AllOf Selector
---   | UpTo Selector
-  -- Raw
-  | RawSelector String
-  deriving (Eq,Show)
-
-data DogmaDescription
-  =
-  --   D Action
-  -- | DD Action Selector
-  -- -- DogmaDescription combinators
-  -- | YouMay DogmaDescription
-  -- | AndAlsoDo DogmaDescription DogmaDescription
-  -- -- Raw
-    RawDescription String
-  deriving (Eq,Show)
-
-data Dogma
-  = Dogma Symbol DogmaDescription
-  | IDemand Symbol DogmaDescription
-  deriving (Eq,Show)
+import           Game.Innovation.BaseTypes
 
 --------------------------------------------------------------------------------
 -- Cards
@@ -91,34 +32,42 @@ isSymbolProduction :: Production -> Bool
 isSymbolProduction (Produce _) = True
 isSymbolProduction _           = False
 
-
 --   +----------------+
 --   | tl             |
 --   |                |
 --   | bl    bc    br |
 --   +----------------+
 data Productions
-  = Productions { _tlProd :: Production
-                , _blProd :: Production
-                , _bcProd :: Production
-                , _brProd :: Production }
+  = Productions { _tlProd :: Production -- top left
+                , _blProd :: Production -- bottom left
+                , _bcProd :: Production -- bottom center
+                , _brProd :: Production -- bottom right
+                }
   deriving (Eq,Show)
 makeLenses ''Productions
 
-data Card
-  = Card { _title       :: String
-         , _color       :: Color
-         , _age         :: Age
-         , _productions :: Productions
-         , _dogmas      :: [Dogma] }
-  deriving (Eq,Show)
-makeLenses ''Card
+class CardC card where
+  cTitle       :: card -> String
+  cColor       :: card -> Color
+  cAge         :: card -> Age
+  cproductions :: card -> Productions
+  cDogmas      :: card -> [Dogmas]
+data Card = forall card.
+            CardC card =>
+            Card { getCard :: card }
+instance CardC card =>
+         CardC (Card card) where
+  cTitle       (Card card) = cTitle       card
+  cColor       (Card card) = cColor       card
+  cAge         (Card card) = cAge         card
+  cproductions (Card card) = cproductions card
+  cDogmas      (Card card) = cDogmas      card
 
 data CardId = CardId String
             deriving (Eq, Show, Read)
 
 instance IDAble CardId Card where
-  getId Card{ _title=t, _age=a } = CardId $ show a ++ ":" ++ t :: CardId
+  getId card = CardId $ cAge card ++ ":" ++ cTitle card :: CardId
 
 --------------------------------------------------------------------------------
 -- Players
@@ -154,17 +103,35 @@ instance IDAble UserId Player where -- UserC Player where
 -- Game state
 --------------------------------------------------------------------------------
 
-data Choice = HasToChoose UserId Selector
-            | HasChosen UserId Selector
-            deriving (Eq, Show)
+data Choice
+  = HasToChoose UserId Selector
+  | HasChosen UserId Selector
+  deriving (Eq, Show)
 
+-- | The state of the underlying machine, which determines who has to act next
+-- and which actions are possible
 data MachineState
-  = Prepare
+  =
+    -- | Prepare means, that the game has not yet startet,
+    -- i.e. the Admin should take actions
+    Prepare
+    -- | WaitForTurn means, that the player currently first in the playerOrder
+    -- should take his turn
   | WaitForTurn
+    -- | WaitForChoices means, that a previous action, which is not yet done,
+    -- needs some player to choose cards, colors, stacks, ...
   | WaitForChoices [Choice]
+    -- | FinishedGame means, that the game has ended with some gameResult,
+    -- no action should modify this state
   | FinishedGame GameResult
   deriving (Eq, Show)
 
+-- | The State contains the complete State of the game including
+--
+--    - all card stacks
+--    - the state of the underlying machine (includes the game result!)
+--    - the playerOrder
+--    - the history
 data State = State { _machineState :: MachineState
                    , _drawStacks   :: Map Age Stack
                    , _players      :: [Player]
@@ -192,6 +159,7 @@ instance StateC State where
       FinishedGame gr -> gr
       _               -> NoWinner
 
+-- | this allows us to write thins like 'Admin `does` AddPlayer "player1"'
 does :: ActionC State actionToken =>
         UserId -> actionToken -> Action State
 does = does' (Proxy :: Proxy State)
