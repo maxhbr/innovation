@@ -10,6 +10,7 @@ module Game.MetaGame
        , TransitionType, Transition (..)
        , ActionC (..), Action, does'
        , Game (..)
+       , actionToTransition, actionsToTransition
        , play, extractGameResult, extractLog, extractState
        , getCurrentPlayer
        , log, logForMe, logError
@@ -68,6 +69,8 @@ class StateC state where
   getCurrentPlayer' :: state -> UserId
   advancePlayerOrder :: state -> state
   getGameResult :: state -> GameResult
+  getStateResult :: state -> (GameResult, state)
+  getStateResult s = (getGameResult s, s)
 
 --------------------------------------------------------------------------------
 -- ** Transitions
@@ -119,6 +122,10 @@ instance Eq (Action state) where
 actionToTransition :: Action state -> Transition state
 actionToTransition (Action userId actionToken) = toTransition' userId actionToken
 
+actionsToTransition :: StateC state =>
+                       [Action state] -> Transition state
+actionsToTransition = mconcat . map actionToTransition
+
 does' :: ActionC state actionToken =>
          Proxy state -> UserId -> actionToken -> Action state
 does' _ = Action
@@ -138,8 +145,7 @@ play :: StateC state =>
         Game state -> PlayResult state
 play (G game) = let
   fullTransition = unpackTransition $
-                   mconcat $
-                   map actionToTransition game
+                   actionsToTransition game
   in (runIdentity .
       W.runWriterT .
       E.runExceptT .

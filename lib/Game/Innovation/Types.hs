@@ -156,12 +156,14 @@ instance IDAble UserId Player where -- UserC Player where
 
 data Choice = HasToChoose UserId Selector
             | HasChosen UserId Selector
+            deriving (Eq, Show)
 
 data MachineState
   = Prepare
   | WaitForTurn
   | WaitForChoices [Choice]
   | FinishedGame GameResult
+  deriving (Eq, Show)
 
 data State = State { _machineState :: MachineState
                    , _drawStacks   :: Map Age Stack

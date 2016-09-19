@@ -16,6 +16,7 @@ import qualified Data.Map as Map
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Data.Maybe
+import           Data.Monoid
 import           Control.Monad.Trans.Identity
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Writer (WriterT)
@@ -45,10 +46,10 @@ data Init = Init DeckName Int
 instance ActionC State Init where
   toTransition' userId (Init deckName seed) =
     userId `onlyAdminIsAllowed`
-    undefined
-    -- T ((toTransition' userId $ SetCardDeck deckName) >>=
-    --    (toTransition' userId $ Shuffle seed) >>=
-    --    (toTransition' userId DrawDominations))
+    actionsToTransition
+    [ userId `does` SetCardDeck deckName
+    , userId `does` Shuffle seed
+    , userId `does` DrawDominations ]
 
 -- | SetCardDeck
 data SetCardDeck = SetCardDeck DeckName
@@ -57,21 +58,22 @@ instance ActionC State SetCardDeck where
   toTransition' userId (SetCardDeck deckName) =
     userId `onlyAdminIsAllowed`
     T ( do
-           undefined
+           log $ "Use the \"" ++ deckName ++ "\" card deck"
+           S.state (\state -> getStateResult state{ _drawStacks=getDeck deckName })
       )
 
 
 -- | Shuffle
 -- create an empty game using a given seed
 data Shuffle = Shuffle Int
-          deriving (Show, Read)
+             deriving (Show, Read)
 instance ActionC State Shuffle where
   toTransition' userId (Shuffle seed) =
     userId `onlyAdminIsAllowed`
     T ( do
            logForMe ("Shuffle with seed [" ++ show seed ++ "]")
              "Shuffle with seed [only visible for admin]"
-           S.state (\state -> (NoWinner, shuffleState seed state))
+           S.state (getStateResult . shuffleState seed)
       )
 
 data DrawDominations = DrawDominations
@@ -80,7 +82,8 @@ instance ActionC State DrawDominations where
   toTransition' userId DrawDominations =
     userId `onlyAdminIsAllowed`
     T ( do
-           undefined
+           log "Draw dominations"
+           S.state getStateResult -- TODO
       )
 
 -- | AddPlayer
@@ -96,7 +99,9 @@ instance ActionC State AddPlayer where
            case view machineState state of
              Prepare -> do
                let newPlayer = mkPlayer playerId
-               S.state (const (NoWinner, players %~ (newPlayer :) $ state))
+               S.state (const (getStateResult $
+                               players %~ (newPlayer :) $
+                               state))
              _       -> logError "not in prepare state."
       )
 
@@ -107,15 +112,24 @@ data StartGame = StartGame
 instance ActionC State StartGame where
   toTransition' userId StartGame =
     userId `onlyAdminIsAllowed`
-    T ( do
-           log "Start game"
-           ps <- use players
-           if length ps >= 2 && length ps <=4
-             then do
-             playerOrder .= map getId ps -- FALSE!
-             undefined  -- TODO
-             else logError "Numer of players is not valid"
-      )
+    (T ( do
+            log "Start game"
+            ps <- use players
+            if length ps >= 2 && length ps <=4
+              then do
+              -- Ask for first card
+              S.state getStateResult
+              else logError "Numer of players is not valid"
+       )) <>
+    -- ... wait..
+    (T ( do
+            -- play chosen cards
+            -- determine starting player
+            ps <- use players
+            playerOrder .= map getId ps -- FALSE!
+            machineState .= WaitForTurn
+            S.state getStateResult
+       ))
 
 data DropPlayer = DropPlayer UserId
                 deriving (Show, Read)
