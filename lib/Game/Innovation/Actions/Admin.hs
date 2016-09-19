@@ -3,9 +3,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Game.Innovation.Actions.Admin
     ( Init (..)
+    , SetCardDeck (..)
+    , Shuffle (..)
+    , DrawDominations (..)
     , AddPlayer (..)
-    , StartGame (..))
-    where
+    , StartGame (..)
+    ) where
 
 import           Prelude hiding (log)
 import           Data.Map (Map)
@@ -32,17 +35,54 @@ import Game.Innovation.Rules
 -- Admin actions
 --------------------------------------------------------------------------------
 
+type DeckId = String
+
 -- | Init
--- create an empty game using a given seed
-data Init = Init Int
+-- Does:
+--  - SetCardDeck
+--  - Shuffle
+--  - DrawDominations
+data Init = Init DeckId Int
           deriving (Show, Read)
 instance ActionC State Init where
-  toTransition' userId (Init seed) =
+  toTransition' userId (Init deckId seed) =
+    userId `onlyAdminIsAllowed`
+    undefined
+    -- T ((toTransition' userId $ SetCardDeck deckId) >>=
+    --    (toTransition' userId $ Shuffle seed) >>=
+    --    (toTransition' userId DrawDominations))
+
+-- | SetCardDeck
+data SetCardDeck = SetCardDeck DeckId
+                 deriving (Show, Read)
+instance ActionC State SetCardDeck where
+  toTransition' userId (SetCardDeck deckId) =
     userId `onlyAdminIsAllowed`
     T ( do
-           logForMe ("Init [with seed " ++ show seed ++ "]")
-             "Init [with seed only visible for admin]"
-           S.state (const (NoWinner, Prepare $ mkInitialState cards seed))
+           undefined
+      )
+
+
+-- | Shuffle
+-- create an empty game using a given seed
+data Shuffle = Shuffle Int
+          deriving (Show, Read)
+instance ActionC State Shuffle where
+  toTransition' userId (Shuffle seed) =
+    userId `onlyAdminIsAllowed`
+    T ( do
+           logForMe ("Shuffle with seed [" ++ show seed ++ "]")
+             "Shuffle with seed [only visible for admin]"
+           S.state (\state -> (NoWinner, shuffleState seed state))
+      )
+
+data DrawDominations = DrawDominations
+                     deriving (Show, Read)
+instance ActionC State DrawDominations where
+  toTransition' userId DrawDominations =
+    userId `onlyAdminIsAllowed`
+    T ( do
+           undefined
       )
 
 -- | AddPlayer
@@ -55,11 +95,11 @@ instance ActionC State AddPlayer where
     T ( do
            log ("Add player: " ++ playerId)
            state <- S.get
-           case state of
-             Prepare state' -> do
+           case view machineState state of
+             Prepare -> do
                let newPlayer = mkPlayer playerId
-               S.state (const (NoWinner, Prepare $ players %~ (newPlayer :) $ state'))
-             _              -> logError "not in prepare state."
+               S.state (const (NoWinner, players %~ (newPlayer :) $ state))
+             _       -> logError "not in prepare state."
       )
 
 -- | StartGame

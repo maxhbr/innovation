@@ -44,10 +44,10 @@ data Symbol = Castle | Tree | Crown | Bulb | Factory | Clock
 -- -- Dogmas
 -- --------------------------------------------------------------------------------
 
--- data Selector
---   = Hand
---   | Influence
---   | StackOfColor Color
+data Selector
+  = Hand
+  | Influence
+  | StackOfColor Color
 --   -- -| TheCard Card
 --   -- Selector combinators
 --   | OrSelector [Selector]
@@ -56,9 +56,9 @@ data Symbol = Castle | Tree | Crown | Bulb | Factory | Clock
 --   | HalfOf Selector
 --   | AllOf Selector
 --   | UpTo Selector
---   -- Raw
---   | RawSelector String
---   deriving (Eq,Show)
+  -- Raw
+  | RawSelector String
+  deriving (Eq,Show)
 
 data DogmaDescription
   =
@@ -147,19 +147,27 @@ instance UserC Player where
 -- Game state
 --------------------------------------------------------------------------------
 
-type PlayerOrder = [UserId]
+data Choice = HasToChoose UserId Selector
+            | HasChosen UserId Selector
 
-data GameState = GameState { _drawStacks  :: Map Age Stack
-                           , _players     :: [Player]
-                           , _playerOrder :: PlayerOrder
-                           , _history     :: Game GameState }
-makeLenses ''GameState
+data MachineState
+  = Prepare
+  | WaitForTurn
+  | WaitForChoices [Choice]
+  | FinishedGame GameResult
 
-instance StateC GameState where
-  initialState = GameState Map.empty [] [] (G [])
+data State = State { _machineState :: MachineState
+                   , _drawStacks   :: Map Age Stack
+                   , _players      :: [Player]
+                   , _playerOrder  :: PlayerOrder
+                   , _history      :: Game State }
+makeLenses ''State
 
-  getCurrentPlayer'  GameState{ _playerOrder=[] }    = Admin
-  getCurrentPlayer'  GameState{ _playerOrder=order } = head order
+instance StateC State where
+  emptyState = State Prepare Map.empty [] [] (G [])
+
+  getCurrentPlayer'  State{ _playerOrder=[] }    = Admin
+  getCurrentPlayer'  State{ _playerOrder=order } = head order
 
   advancePlayerOrder = L.over playerOrder advancePlayerOrder'
     where
@@ -169,50 +177,6 @@ instance StateC GameState where
       advancePlayerOrder' (p1:(p2:ps)) | p1 == p2  = p2:ps
                                        | otherwise = p2:ps ++ [p1,p1]
 
---------------------------------------------------------------------------------
--- (Machine-) state
---------------------------------------------------------------------------------
-
-data Choices -- TODO
-
-data State
-  = Prepare GameState
-  | WaitForTurn GameState
-  | WaitForChoices [Choices] GameState
-  | FinishedGame GameState
-
-unpackState :: State -> GameState
-unpackState (Prepare gs)          = gs
-unpackState (WaitForTurn gs)      = gs
-unpackState (WaitForChoices _ gs) = gs
-unpackState (FinishedGame gs)     = gs
-
-instance StateC State where
-  initialState = Prepare initialState
-
-  getCurrentPlayer' = getCurrentPlayer' . unpackState
-
-  advancePlayerOrder (Prepare gs)           = Prepare $ advancePlayerOrder gs
-  advancePlayerOrder (WaitForTurn gs)       = WaitForTurn $ advancePlayerOrder gs
-  advancePlayerOrder (WaitForChoices cs gs) = WaitForChoices cs $ advancePlayerOrder gs
-  advancePlayerOrder (FinishedGame gs)      = FinishedGame $ advancePlayerOrder gs
-
--- drawStacks :: Lens' MachineState (Map Age Stack)
--- drawStacks = L.lens getter setter
---   where
---     getter :: MachineState -> Map Age Stack
---     getter Q0                           = Map.empty
---     getter s = _drawStacks $ unpackState s
-
---     setter :: Map Age Stack -> MachineState -> State
---     setter dss Q0                            = undefined -- TODO
---     setter dss (Prepare gameState)           = Prepare $ setter' gameState
---     setter dss (MachineState gameState)             = State $ setter' gameState
---     setter dss (WaitForChoices cs gameState) = WaitForChoices cs $ setter' gameState
---     setter dss (FinishedGame gameState)      = FinishedGame $ setter' gameState
-
---     setter' :: Map Age Stack -> GameState -> GameState
---     setter' dss gameState = gameState{ _drawStacks = dss }
 
 does :: ActionC State actionToken =>
         UserId -> actionToken -> Action State
@@ -230,8 +194,7 @@ mkPlayer playerId = Player (U playerId)
                            []
                            []
 
-
-shuffleState :: Int -> GameState -> GameState
+shuffleState :: Int -> State -> State
 shuffleState seed gs = gs{ _drawStacks=permutatedDS }
   where
     stdGen = mkStdGen seed

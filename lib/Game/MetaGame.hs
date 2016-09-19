@@ -3,7 +3,7 @@
 module Game.MetaGame
        ( UserId (..), isAdmin
        , UserC (..)
-       , StateC (..), GameResult (..)
+       , PlayerOrder, StateC (..), GameResult (..)
        , Log (..), viewLog
        , TransitionType, Transition (..)
        , ActionC (..), Action, does'
@@ -53,8 +53,10 @@ class UserC user where
 --------------------------------------------------------------------------------
 -- ** State
 
+type PlayerOrder = [UserId]
+
 class StateC state where
-  initialState :: state
+  emptyState :: state
   getCurrentPlayer' :: state -> UserId
   advancePlayerOrder :: state -> state
 
@@ -136,7 +138,7 @@ play (G game) = let
   in (runIdentity .
       W.runWriterT .
       E.runExceptT .
-      S.runStateT fullTransition) initialState
+      S.runStateT fullTransition) emptyState
 
 --------------------------------------------------------------------------------
 -- ** related helper

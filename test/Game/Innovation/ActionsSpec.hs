@@ -11,6 +11,7 @@ import Game.MetaGame
 import Game.Innovation.Types
 import Game.Innovation.Actions
 
+deckId = "deckId" :: String -- DeckId
 seed = 12345 :: Int
 
 printLog = TIO.putStrLn . viewLog Admin . extractLog
@@ -28,14 +29,14 @@ spec =
       let state = fromJust stateM
       view players state `shouldBe` []
     it "just init" $ do
-      let game = G [ Admin `does` Init seed ]
+      let game = G [ Admin `does` Init deckId seed ]
       let playResult = play game
       printLog playResult
       extractGameResult playResult `shouldBe` NoWinner
       let stateM = extractState playResult
       isNothing stateM `shouldBe` True
     it "just init and start" $ do
-      let game = G [ Admin `does` Init seed
+      let game = G [ Admin `does` Init deckId seed
                    , Admin `does` StartGame ]
       let playResult = play game
       printLog playResult
@@ -43,7 +44,7 @@ spec =
       let stateM = extractState playResult
       isJust stateM `shouldBe` False
     it "just init + addPlayers" $ do
-      let game = G [ Admin `does` Init seed
+      let game = G [ Admin `does` Init deckId seed
                    , Admin `does` AddPlayer "user1"
                    , Admin `does` AddPlayer "user2" ]
       let playResult = play game
@@ -54,7 +55,7 @@ spec =
       let state = fromJust stateM
       map getUserId (view players state) `shouldBe` [U "user1", U "user2"]
     it "just init + addPlayers + StartGame" $ do
-      let game = G [ Admin `does` Init seed
+      let game = G [ Admin `does` Init deckId seed
                    , Admin `does` AddPlayer "user1"
                    , Admin `does` AddPlayer "user2"
                    , Admin `does` StartGame]

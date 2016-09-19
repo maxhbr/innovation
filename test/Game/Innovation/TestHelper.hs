@@ -13,7 +13,7 @@ getAllCardsFromMap :: Map a Stack -> Stack
 getAllCardsFromMap = Map.foldr (++) []
 
 getAllCurrentCards :: State -> Stack
-getAllCurrentCards (State drawStacks players _ _) = cardsInDrawStacks ++ cardsAtPlayers
+getAllCurrentCards (State _ drawStacks players _ _) = cardsInDrawStacks ++ cardsAtPlayers
   where
     cardsInDrawStacks = getAllCardsFromMap drawStacks
     cardsAtPlayers    = concatMap getAllCardsOfPlayer players
