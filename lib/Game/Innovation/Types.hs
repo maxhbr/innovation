@@ -51,17 +51,21 @@ class CardC card where
   cColor       :: card -> Color
   cAge         :: card -> Age
   cproductions :: card -> Productions
-  cDogmas      :: card -> [Dogmas]
+  cDogmas      :: card -> [Dogma]
+
 data Card = forall card.
             CardC card =>
             Card { getCard :: card }
-instance CardC card =>
-         CardC (Card card) where
+
+instance CardC Card where
   cTitle       (Card card) = cTitle       card
   cColor       (Card card) = cColor       card
   cAge         (Card card) = cAge         card
   cproductions (Card card) = cproductions card
   cDogmas      (Card card) = cDogmas      card
+
+instance Show Card where
+  show (Card card) = cTitle card
 
 data CardId = CardId String
             deriving (Eq, Show, Read)
@@ -103,10 +107,13 @@ instance IDAble UserId Player where -- UserC Player where
 -- Game state
 --------------------------------------------------------------------------------
 
+data Selector
+  deriving Show
+
 data Choice
   = HasToChoose UserId Selector
   | HasChosen UserId Selector
-  deriving (Eq, Show)
+  deriving (Show)
 
 -- | The state of the underlying machine, which determines who has to act next
 -- and which actions are possible
@@ -165,7 +172,7 @@ does :: ActionC State actionToken =>
 does = does' (Proxy :: Proxy State)
 
 --------------------------------------------------------------------------------
--- Generators
+-- Generators and helper
 --------------------------------------------------------------------------------
 
 mkPlayer :: String -> Player
@@ -183,3 +190,27 @@ shuffleState seed gs = gs{ _drawStacks=permutatedDS }
     shuffle []    = []
     shuffle stack = shuffle' stack (length stack) stdGen
     permutatedDS = Map.map shuffle $ _drawStacks gs
+
+
+--------------------------------------------------------------------------------
+-- Dogmas
+--------------------------------------------------------------------------------
+data DogmaDescription
+  =
+    -- | every affected player has to do the described action
+    D (Action State) -- TODO: needs better name
+    -- | the affected player has the choice to do the described action
+  | YouMay DogmaDescription
+  -- Raw
+    -- | the description was not yet implemented and the part to implement is
+    -- given by the 'String'
+  | RawDescription String
+  deriving (Eq,Show)
+
+data Dogma
+  =
+    -- | Describes a cooperative dogma based on the given symbol
+    Dogma Symbol DogmaDescription
+    -- | Describes a aggresive dogma based on the given symbol
+  | IDemand Symbol DogmaDescription
+  deriving (Eq,Show)
