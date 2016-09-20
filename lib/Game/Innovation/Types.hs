@@ -62,14 +62,13 @@ data Selector
   deriving (Eq,Show)
 
 data DogmaDescription
-  =
+  = RawDescription String
   --   D Action
   -- | DD Action Selector
   -- -- DogmaDescription combinators
-  -- | YouMay DogmaDescription
-  -- | AndAlsoDo DogmaDescription DogmaDescription
+  | YouMay DogmaDescription
+  | AndAlsoDo DogmaDescription DogmaDescription
   -- -- Raw
-    RawDescription String
   deriving (Eq,Show)
 
 data Dogma
@@ -165,18 +164,20 @@ data MachineState
   | FinishedGame GameResult
   deriving (Eq, Show)
 
-data State = State { _machineState :: MachineState
+type PlayerOrder = [UserId]
+
+data Board = Board { _machineState :: MachineState
                    , _drawStacks   :: Map Age Stack
                    , _players      :: [Player]
                    , _playerOrder  :: PlayerOrder
-                   , _history      :: Game State }
-makeLenses ''State
+                   , _history      :: Game Board }
+makeLenses ''Board
 
-instance StateC State where
-  emptyState = State Prepare Map.empty [] [] (G [])
+instance StateC Board where
+  emptyState = Board Prepare Map.empty [] [] (G [])
 
-  getCurrentPlayer'  State{ _playerOrder=[] }    = Admin
-  getCurrentPlayer'  State{ _playerOrder=order } = head order
+  getCurrentPlayer'  Board{ _playerOrder=[] }    = Admin
+  getCurrentPlayer'  Board{ _playerOrder=order } = head order
 
   advancePlayerOrder = L.over playerOrder advancePlayerOrder'
     where
@@ -192,9 +193,9 @@ instance StateC State where
       FinishedGame gr -> gr
       _               -> NoWinner
 
-does :: ActionC State actionToken =>
-        UserId -> actionToken -> Action State
-does = does' (Proxy :: Proxy State)
+does :: ActionC Board actionToken =>
+        UserId -> actionToken -> Action Board
+does = does' (Proxy :: Proxy Board)
 
 --------------------------------------------------------------------------------
 -- Generators
@@ -208,7 +209,7 @@ mkPlayer playerId = Player (U playerId)
                            []
                            []
 
-shuffleState :: Int -> State -> State
+shuffleState :: Int -> Board -> Board
 shuffleState seed gs = gs{ _drawStacks=permutatedDS }
   where
     stdGen = mkStdGen seed

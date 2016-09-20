@@ -43,7 +43,7 @@ import           Game.Innovation.Rules
 --  - DrawDominations
 data Init = Init DeckName Int
           deriving (Show, Read)
-instance ActionC State Init where
+instance ActionC Board Init where
   toTransition' userId (Init deckName seed) =
     userId `onlyAdminIsAllowed`
     actionsToTransition
@@ -54,7 +54,7 @@ instance ActionC State Init where
 -- | SetCardDeck
 data SetCardDeck = SetCardDeck DeckName
                  deriving (Show, Read)
-instance ActionC State SetCardDeck where
+instance ActionC Board SetCardDeck where
   toTransition' userId (SetCardDeck deckName) =
     userId `onlyAdminIsAllowed`
     T ( do
@@ -67,7 +67,7 @@ instance ActionC State SetCardDeck where
 -- create an empty game using a given seed
 data Shuffle = Shuffle Int
              deriving (Show, Read)
-instance ActionC State Shuffle where
+instance ActionC Board Shuffle where
   toTransition' userId (Shuffle seed) =
     userId `onlyAdminIsAllowed`
     T ( do
@@ -78,7 +78,7 @@ instance ActionC State Shuffle where
 
 data DrawDominations = DrawDominations
                      deriving (Show, Read)
-instance ActionC State DrawDominations where
+instance ActionC Board DrawDominations where
   toTransition' userId DrawDominations =
     userId `onlyAdminIsAllowed`
     T ( do
@@ -90,7 +90,7 @@ instance ActionC State DrawDominations where
 -- add an player with a given playerId to the game
 data AddPlayer = AddPlayer String
                deriving (Show, Read)
-instance ActionC State AddPlayer where
+instance ActionC Board AddPlayer where
   toTransition' userId (AddPlayer playerId) =
     userId `onlyAdminIsAllowed`
     T ( do
@@ -109,7 +109,7 @@ instance ActionC State AddPlayer where
 -- finish preperations of the game
 data StartGame = StartGame
                deriving (Show, Read)
-instance ActionC State StartGame where
+instance ActionC Board StartGame where
   toTransition' userId StartGame =
     userId `onlyAdminIsAllowed`
     (T ( do

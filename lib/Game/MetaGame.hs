@@ -2,10 +2,11 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Game.MetaGame
        ( IDAble (..)
        , UserId (..), UserC (..), isAdmin
-       , PlayerOrder, StateC (..), GameResult (..)
+       , StateC (..), GameResult (..)
        , Log (..), viewLog
        , TransitionType, Transition (..)
        , ActionC (..), Action, does'
@@ -42,6 +43,8 @@ class (Eq id, Show id, Read id) =>
   getId :: a -> id
   hasId :: a -> id -> Bool
   hasId a id = getId a == id
+-- instance Eq (IDAble id a) where
+--   a1 == a2 = hasId a1 $ getId a2
 
 --------------------------------------------------------------------------------
 -- ** Users and user-related stuff
@@ -49,11 +52,12 @@ class (Eq id, Show id, Read id) =>
 data UserId = U String
             | Admin
             deriving (Show,Eq,Read)
-type UserC user = IDAble UserId user
 
 isAdmin :: UserId -> Bool
 isAdmin Admin = True
 isAdmin _     = False
+
+type UserC user = IDAble UserId user
 
 --------------------------------------------------------------------------------
 -- ** State
@@ -62,24 +66,41 @@ data GameResult = NoWinner
                 | WinningOrder [UserId]
                 deriving (Show,Eq,Read)
 
-type PlayerOrder = [UserId]
-
 class StateC state where
   emptyState :: state
+
+  -- | get the player, which is expected to act next
+  -- if another user is acting, the game fails
   getCurrentPlayer' :: state -> UserId
+
+  -- | the current player is done with its action
   advancePlayerOrder :: state -> state
+
+  -- | unpack the currently known result from the state
   getGameResult :: state -> GameResult
+
+  -- | Helper function, which uses 'getGameResult', is used to modify the state monad
   getStateResult :: state -> (GameResult, state)
   getStateResult s = (getGameResult s, s)
+
+instance StateC state =>
+         StateC (Game state, state) where
+  emptyState = undefined
+  getCurrentPlayer' = undefined
+  advancePlayerOrder = undefined
+  getGameResult = undefined
 
 --------------------------------------------------------------------------------
 -- ** Transitions
 
+-- | A user dependent Log
 newtype Log = Log (UserId -> Text)
 
+-- | helper function to get the log from the view of an user
 viewLog :: UserId -> Log -> Text
 viewLog userId (Log log) = log userId
 
+-- | we can combine logs to in an monoidal way
 instance Monoid Log where
   mempty                    = Log $ const (T.pack "")
   mappend (Log l1) (Log l2) = Log $ \userId -> let
@@ -90,10 +111,18 @@ instance Monoid Log where
                    else ""
     in T.concat [ l1 userId, sep ,l2 userId ]
 
-type TransitionType s r = StateT s (ExceptT Text (WriterT Log Identity)) r
+-- | The type of an transition
+--    * uses WriterT to log
+--    * uses ExceptT to communicate failures
+--    * uses StateT to handle the state '(Game s, s)' where
+--      - the first thing represents the history of the game
+--      - the second one is the current state of the board
+type TransitionType s r = StateT (Game s, s) (ExceptT Text (WriterT Log Identity)) r
 
-data Transition s = T { unpackTransition :: TransitionType s GameResult}
+-- | The wrapper for an transition
+newtype Transition s = T { unpackTransition :: TransitionType s GameResult}
 
+-- | Transitions can be combined in an monoidal way
 instance StateC state =>
          Monoid (Transition state) where
   mempty                = T $ return NoWinner
@@ -106,14 +135,15 @@ class (StateC state, Read actionToken, Show actionToken) =>
       ActionC state actionToken where
   toTransition' :: UserId -> actionToken -> Transition state
 
+-- | 'Action state' is an action which can be used in a game over 'state'
 data Action state = forall actionToken.
                     ActionC state actionToken =>
                     Action { getActingPlayer :: UserId
                            , getToken :: actionToken }
 
 instance Show (Action state) where
-  show (Action Admin action)      = show action
-  show (Action (U userId) action) = userId ++ ": " ++ show action
+  show (Action Admin actionToken)      = show actionToken
+  show (Action (U userId) actionToken) = userId ++ ": " ++ show actionToken
 
 -- | The `Eq` instance of `Action state` is deriven from the `Show` instance
 instance Eq (Action state) where
@@ -133,6 +163,8 @@ does' _ = Action
 --------------------------------------------------------------------------------
 -- ** Game
 
+-- | A game consists of all the taken actions in chronological order
+-- the last taken action is the head
 newtype Game state = G [Action state]
 
 --------------------------------------------------------------------------------
@@ -146,10 +178,13 @@ play :: StateC state =>
 play (G game) = let
   fullTransition = unpackTransition $
                    actionsToTransition game
-  in (runIdentity .
-      W.runWriterT .
-      E.runExceptT .
-      S.runStateT fullTransition) emptyState
+  removeHistory :: PlayResult (Game state, state) -> PlayResult state
+  removeHistory (Right (res,(_,state)), log) = (Right (res, state), log)
+  removeHistory (Left err,              log) = (Left err,    log)
+  in removeHistory $ (runIdentity .
+                      W.runWriterT .
+                      E.runExceptT .
+                      S.runStateT fullTransition) emptyState
 
 --------------------------------------------------------------------------------
 -- ** related helper

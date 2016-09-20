@@ -28,7 +28,7 @@ import           Game.Innovation.Cards
 getStackFromMapBy :: (Ord k) => k -> Map k Stack -> Stack
 getStackFromMapBy = Map.findWithDefault emptyStack
 
-getPlayerByUserId :: Maybe UserId -> State -> Maybe Player
+getPlayerByUserId :: Maybe UserId -> Board -> Maybe Player
 getPlayerByUserId Nothing _           = Nothing
 getPlayerByUserId (Just userId) state = undefined
 
@@ -43,7 +43,7 @@ getCurrentAge player = let
      then toEnum $ maximum currentAges
      else Age1
 
-getCurrentDrawAge :: Player -> State -> Maybe Age
+getCurrentDrawAge :: Player -> Board -> Maybe Age
 getCurrentDrawAge player state = if null agesAboveWithCards
                                  then Nothing
                                  else Just $ head agesAboveWithCards
