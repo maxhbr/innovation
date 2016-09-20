@@ -1,79 +1,22 @@
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
 module Game.Innovation.Types
        where
 
-import Data.Map (Map)
+import           Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Text (Text)
+import           Data.Text (Text)
 import qualified Data.Text as T
-import Data.Proxy
-import System.Random
-import System.Random.Shuffle (shuffle')
-import Control.Lens
+import           Data.Proxy
+import           System.Random
+import           System.Random.Shuffle (shuffle')
+import           Control.Lens (makeLenses, Lens, Lens')
+import qualified Control.Lens as L
 
-import Game.MetaGame
-
---------------------------------------------------------------------------------
--- Basic types
---------------------------------------------------------------------------------
-
-data Color = Blue | Purple | Red | Yellow | Green
-  deriving (Eq,Show,Read,Enum,Ord,Bounded)
-colors :: [Color]
-colors = [minBound ..]
-
-data Age = Age1 | Age2 | Age3 | Age4 | Age5 | Age6 | Age7 | Age8 | Age9 | Age10
-  deriving (Eq,Show,Read,Enum,Ord,Bounded)
-ages :: [Age]
-ages =  [minBound ..]
-
-data Symbol = Castle | Tree | Crown | Bulb | Factory | Clock
-  deriving (Eq,Show,Read,Enum,Ord,Bounded)
-
---------------------------------------------------------------------------------
--- Actions
---------------------------------------------------------------------------------
-
--- data Action
---   =  RawAction String
---   deriving (Eq,Show)
-
--- --------------------------------------------------------------------------------
--- -- Dogmas
--- --------------------------------------------------------------------------------
-
--- data Selector
---   = Hand
---   | Influence
---   | StackOfColor Color
---   -- -| TheCard Card
---   -- Selector combinators
---   | OrSelector [Selector]
---   | AndSelector [Selector]
---   | OneOf Selector
---   | HalfOf Selector
---   | AllOf Selector
---   | UpTo Selector
---   -- Raw
---   | RawSelector String
---   deriving (Eq,Show)
-
-data DogmaDescription
-  =
-  --   D Action
-  -- | DD Action Selector
-  -- -- DogmaDescription combinators
-  -- | YouMay DogmaDescription
-  -- | AndAlsoDo DogmaDescription DogmaDescription
-  -- -- Raw
-    RawDescription String
-  deriving (Eq,Show)
-
-data Dogma
-  = Dogma Symbol DogmaDescription
-  | IDemand Symbol DogmaDescription
-  deriving (Eq,Show)
+import           Game.MetaGame
+import           Game.Innovation.BaseTypes
 
 --------------------------------------------------------------------------------
 -- Cards
@@ -89,28 +32,46 @@ isSymbolProduction :: Production -> Bool
 isSymbolProduction (Produce _) = True
 isSymbolProduction _           = False
 
-
 --   +----------------+
 --   | tl             |
 --   |                |
 --   | bl    bc    br |
 --   +----------------+
 data Productions
-  = Productions { _tlProd :: Production
-                , _blProd :: Production
-                , _bcProd :: Production
-                , _brProd :: Production }
+  = Productions { _tlProd :: Production -- top left
+                , _blProd :: Production -- bottom left
+                , _bcProd :: Production -- bottom center
+                , _brProd :: Production -- bottom right
+                }
   deriving (Eq,Show)
 makeLenses ''Productions
 
-type CardId = String
-data Card
-  = Card { _color       :: Color
-         , _age         :: Age
-         , _productions :: Productions
-         , _dogmas      :: [Dogma] }
-  deriving (Eq,Show)
-makeLenses ''Card
+class CardC card where
+  cTitle       :: card -> String
+  cColor       :: card -> Color
+  cAge         :: card -> Age
+  cproductions :: card -> Productions
+  cDogmas      :: card -> [Dogma]
+
+data Card = forall card.
+            CardC card =>
+            Card { getCard :: card }
+
+instance CardC Card where
+  cTitle       (Card card) = cTitle       card
+  cColor       (Card card) = cColor       card
+  cAge         (Card card) = cAge         card
+  cproductions (Card card) = cproductions card
+  cDogmas      (Card card) = cDogmas      card
+
+instance Show Card where
+  show (Card card) = cTitle card
+
+data CardId = CardId String
+            deriving (Eq, Show, Read)
+
+instance IDAble CardId Card where
+  getId card = CardId $ cAge card ++ ":" ++ cTitle card :: CardId
 
 --------------------------------------------------------------------------------
 -- Players
@@ -139,48 +100,59 @@ makeLenses ''Player
 instance Eq Player where
   p1 == p2 = _playerId p1 == _playerId p2
 
-instance UserC Player where
-  getUserId = _playerId
+instance IDAble UserId Player where -- UserC Player where
+  getId = _playerId
 
 --------------------------------------------------------------------------------
 -- Game state
 --------------------------------------------------------------------------------
 
-type PlayerOrder = [UserId]
+data Selector
+  deriving Show
 
-data Choices -- TODO
+data Choice
+  = HasToChoose UserId Selector
+  | HasChosen UserId Selector
+  deriving (Show)
 
-data State
-  = Q0
-  | Prepare State
-  | State { _drawStacks  :: Map Age Stack
-          , _players     :: [Player]
-          , _playerOrder :: PlayerOrder
-          , _history     :: Game State }
-  | WaitForChoices { _choices            :: [Choices]
-                   , _stateBeforeCohices :: State }
-  | FinishedGame State
+-- | The state of the underlying machine, which determines who has to act next
+-- and which actions are possible
+data MachineState
+  =
+    -- | Prepare means, that the game has not yet startet,
+    -- i.e. the Admin should take actions
+    Prepare
+    -- | WaitForTurn means, that the player currently first in the playerOrder
+    -- should take his turn
+  | WaitForTurn
+    -- | WaitForChoices means, that a previous action, which is not yet done,
+    -- needs some player to choose cards, colors, stacks, ...
+  | WaitForChoices [Choice]
+    -- | FinishedGame means, that the game has ended with some gameResult,
+    -- no action should modify this state
+  | FinishedGame GameResult
+  deriving (Eq, Show)
+
+-- | The State contains the complete State of the game including
+--
+--    - all card stacks
+--    - the state of the underlying machine (includes the game result!)
+--    - the playerOrder
+--    - the history
+data State = State { _machineState :: MachineState
+                   , _drawStacks   :: Map Age Stack
+                   , _players      :: [Player]
+                   , _playerOrder  :: PlayerOrder
+                   , _history      :: Game State }
 makeLenses ''State
 
-does :: ActionC State actionToken =>
-        UserId -> actionToken -> Action State
-does = does' (Proxy :: Proxy State)
-
 instance StateC State where
-  initialState = Q0
+  emptyState = State Prepare Map.empty [] [] (G [])
 
-  getCurrentPlayer'  Q0                              = Admin
-  getCurrentPlayer' (Prepare _)                      = Admin
-  getCurrentPlayer' (FinishedGame state)             = getCurrentPlayer' state
-  getCurrentPlayer' State { _playerOrder = order } = if null order
-                                                     then Admin
-                                                     else head order
+  getCurrentPlayer'  State{ _playerOrder=[] }    = Admin
+  getCurrentPlayer'  State{ _playerOrder=order } = head order
 
-  advancePlayerOrder Q0                     = Q0
-  advancePlayerOrder s@(Prepare _)          = s
-  advancePlayerOrder s@(FinishedGame _)     = s
-  advancePlayerOrder s@(WaitForChoices _ _) = s
-  advancePlayerOrder s                      = over playerOrder advancePlayerOrder' s
+  advancePlayerOrder = L.over playerOrder advancePlayerOrder'
     where
       advancePlayerOrder' :: PlayerOrder -> PlayerOrder
       advancePlayerOrder' []                       = []
@@ -188,9 +160,19 @@ instance StateC State where
       advancePlayerOrder' (p1:(p2:ps)) | p1 == p2  = p2:ps
                                        | otherwise = p2:ps ++ [p1,p1]
 
+  getGameResult state = let
+    ms = _machineState state
+    in case ms of
+      FinishedGame gr -> gr
+      _               -> NoWinner
+
+-- | this allows us to write thins like 'Admin `does` AddPlayer "player1"'
+does :: ActionC State actionToken =>
+        UserId -> actionToken -> Action State
+does = does' (Proxy :: Proxy State)
 
 --------------------------------------------------------------------------------
--- Generators
+-- Generators and helper
 --------------------------------------------------------------------------------
 
 mkPlayer :: String -> Player
@@ -201,13 +183,34 @@ mkPlayer playerId = Player (U playerId)
                            []
                            []
 
-mkInitialState :: Map Age Stack -> Int -> State
-mkInitialState initialDrawStacks seed = State permutatedDrawStack
-                                        []
-                                        []
-                                        (G [])
+shuffleState :: Int -> State -> State
+shuffleState seed gs = gs{ _drawStacks=permutatedDS }
   where
     stdGen = mkStdGen seed
     shuffle []    = []
     shuffle stack = shuffle' stack (length stack) stdGen
-    permutatedDrawStack = Map.map shuffle initialDrawStacks
+    permutatedDS = Map.map shuffle $ _drawStacks gs
+
+
+--------------------------------------------------------------------------------
+-- Dogmas
+--------------------------------------------------------------------------------
+data DogmaDescription
+  =
+    -- | every affected player has to do the described action
+    D (Action State) -- TODO: needs better name
+    -- | the affected player has the choice to do the described action
+  | YouMay DogmaDescription
+  -- Raw
+    -- | the description was not yet implemented and the part to implement is
+    -- given by the 'String'
+  | RawDescription String
+  deriving (Eq,Show)
+
+data Dogma
+  =
+    -- | Describes a cooperative dogma based on the given symbol
+    Dogma Symbol DogmaDescription
+    -- | Describes a aggresive dogma based on the given symbol
+  | IDemand Symbol DogmaDescription
+  deriving (Eq,Show)

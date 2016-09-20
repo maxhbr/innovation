@@ -1,13 +1,16 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Game.MetaGame
-       ( UserId (..), isAdmin
-       , UserC (..)
-       , StateC (..), GameResult (..)
+       ( IDAble (..)
+       , UserId (..), UserC (..), isAdmin
+       , PlayerOrder, StateC (..), GameResult (..)
        , Log (..), viewLog
        , TransitionType, Transition (..)
        , ActionC (..), Action, does'
        , Game (..)
+       , actionToTransition, actionsToTransition
        , play, extractGameResult, extractLog, extractState
        , getCurrentPlayer
        , log, logForMe, logError
@@ -34,33 +37,40 @@ import qualified Control.Monad.Trans.State.Lazy as S
 -- * Basic data and type declerations
 --------------------------------------------------------------------------------
 
+class (Eq id, Show id, Read id) =>
+      IDAble id a where
+  getId :: a -> id
+  hasId :: a -> id -> Bool
+  hasId a id = getId a == id
+
 --------------------------------------------------------------------------------
 -- ** Users and user-related stuff
 
 data UserId = U String
             | Admin
             deriving (Show,Eq,Read)
+type UserC user = IDAble UserId user
 
 isAdmin :: UserId -> Bool
 isAdmin Admin = True
 isAdmin _     = False
 
-class UserC user where
-  getUserId :: user -> UserId
-  isUserId :: UserId -> user -> Bool
-  isUserId userId user = getUserId user == userId
-
 --------------------------------------------------------------------------------
 -- ** State
-
-class StateC state where
-  initialState :: state
-  getCurrentPlayer' :: state -> UserId
-  advancePlayerOrder :: state -> state
 
 data GameResult = NoWinner
                 | WinningOrder [UserId]
                 deriving (Show,Eq,Read)
+
+type PlayerOrder = [UserId]
+
+class StateC state where
+  emptyState :: state
+  getCurrentPlayer' :: state -> UserId
+  advancePlayerOrder :: state -> state
+  getGameResult :: state -> GameResult
+  getStateResult :: state -> (GameResult, state)
+  getStateResult s = (getGameResult s, s)
 
 --------------------------------------------------------------------------------
 -- ** Transitions
@@ -112,8 +122,12 @@ instance Eq (Action state) where
 actionToTransition :: Action state -> Transition state
 actionToTransition (Action userId actionToken) = toTransition' userId actionToken
 
+actionsToTransition :: StateC state =>
+                       [Action state] -> Transition state
+actionsToTransition = mconcat . map actionToTransition
+
 does' :: ActionC state actionToken =>
-        Proxy state -> UserId -> actionToken -> Action state
+         Proxy state -> UserId -> actionToken -> Action state
 does' _ = Action
 
 --------------------------------------------------------------------------------
@@ -131,12 +145,11 @@ play :: StateC state =>
         Game state -> PlayResult state
 play (G game) = let
   fullTransition = unpackTransition $
-                   mconcat $
-                   map actionToTransition game
+                   actionsToTransition game
   in (runIdentity .
       W.runWriterT .
       E.runExceptT .
-      S.runStateT fullTransition) initialState
+      S.runStateT fullTransition) emptyState
 
 --------------------------------------------------------------------------------
 -- ** related helper
@@ -187,7 +200,6 @@ logError error = do
   lift . lift . W.tell $ Log $ const $ T.pack $ "Error: " ++ error
   lift . E.throwE $ T.pack error
   S.state (\s -> (NoWinner, s))
-
 
 onlyAdminIsAllowed :: UserId -> Transition state ->  Transition state
 onlyAdminIsAllowed Admin t = t

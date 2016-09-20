@@ -13,7 +13,7 @@ getAllCardsFromMap :: Map a Stack -> Stack
 getAllCardsFromMap = Map.foldr (++) []
 
 getAllCurrentCards :: State -> Stack
-getAllCurrentCards (State drawStacks players _ _) = cardsInDrawStacks ++ cardsAtPlayers
+getAllCurrentCards (State _ drawStacks players _ _) = cardsInDrawStacks ++ cardsAtPlayers
   where
     cardsInDrawStacks = getAllCardsFromMap drawStacks
     cardsAtPlayers    = concatMap getAllCardsOfPlayer players
@@ -21,7 +21,7 @@ getAllCurrentCards (State drawStacks players _ _) = cardsInDrawStacks ++ cardsAt
     getAllCardsOfPlayer (Player _ stacks _ influence dominations hand) = undefined
 
 getAllStartingCards :: Stack
-getAllStartingCards = getAllCardsFromMap cards
+getAllStartingCards = getAllCardsFromMap $ getDeck "base"
 
 exactlyAllCardsArePresent :: State -> Bool
 exactlyAllCardsArePresent state = undefined

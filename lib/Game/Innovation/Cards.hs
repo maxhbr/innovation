@@ -1,5 +1,6 @@
 module Game.Innovation.Cards
-    ( cards
+    ( DeckName
+    , getDeck
     ) where
 
 import Data.Map (Map)
@@ -7,25 +8,28 @@ import qualified Data.Map as Map
 
 import Game.Innovation.Types
 
-cards :: Map Age Stack
-cards = Map.fromList
-        [(Age1,[agriculture])
-        ,(Age2,[])
-        ,(Age3,[])
-        ,(Age4,[])
-        ,(Age5,[])
-        ,(Age6,[])
-        ,(Age7,[])
-        ,(Age8,[])
-        ,(Age9,[])
-        ,(Age10,[])]
+type DeckName = String
+
+getDeck :: DeckName -> Map Age Stack
+getDeck "base" = Map.fromList
+                 [(Age1,[agriculture,masonry])
+                 ,(Age2,[])
+                 ,(Age3,[feudalism])
+                 ,(Age4,[])
+                 ,(Age5,[])
+                 ,(Age6,[])
+                 ,(Age7,[combustion])
+                 ,(Age8,[])
+                 ,(Age9,[])
+                 ,(Age10,[bioengineering])]
 
 --------------------------------------------------------------------------------
 -- Age1 Cards
 --------------------------------------------------------------------------------
 
 agriculture =
-  Card { _color       = Yellow
+  Card { _title       = "Agriculture"
+       , _color       = Yellow
        , _age         = Age1
        , _productions = Productions None (Produce Tree) (Produce Tree) (Produce Tree)
        , _dogmas      =
@@ -33,7 +37,8 @@ agriculture =
        }
 
 masonry =
-  Card { _color       = Yellow
+  Card { _title       = "Masonry"
+       , _color       = Yellow
        , _age         = Age1
        , _productions = Productions (Produce Castle) None (Produce Castle) (Produce Castle)
        , _dogmas      =
@@ -49,7 +54,8 @@ masonry =
 --------------------------------------------------------------------------------
 
 feudalism =
-  Card { _color       = Purple
+  Card { _title       = "Feudalism"
+       , _color       = Purple
        , _age         = Age3
        , _productions = Productions None (Produce Castle) (Produce Tree) (Produce Castle)
        , _dogmas      =
@@ -74,13 +80,13 @@ feudalism =
 --------------------------------------------------------------------------------
 
 combustion =
-  Card { _color       = Red
+  Card { _title       = "Combustion"
+       , _color       = Red
        , _age         = Age7
        , _productions = Productions (Produce Crown) (Produce Crown) (Produce Factory) None
        , _dogmas      =
          [Tree `IDemand` (RawDescription "I demand you transfer two cards from your Influence to my Influence!")]
        }
-
 
 --------------------------------------------------------------------------------
 -- Age8 Cards
@@ -95,7 +101,8 @@ combustion =
 --------------------------------------------------------------------------------
 
 bioengineering =
-  Card { _color       = Blue
+  Card { _title       = "Bioengineering"
+       , _color       = Blue
        , _age         = Age10
        , _productions = Productions (Produce Bulb) (Produce Clock) (Produce Clock) None
        , _dogmas      =
