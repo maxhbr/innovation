@@ -22,11 +22,11 @@ spec :: Spec
 spec =
   describe "Game.Innovation.Actions.Admin" $ do
     it "emty game setup" $ do
-      let game = G ([] :: [Action State])
+      let game = G ([] :: [Turn Board])
       let playResult = play game
       printLog playResult
       extractGameResult playResult `shouldBe` NoWinner
-      let stateM = extractState playResult
+      let stateM = extractBoard playResult
       isJust stateM `shouldBe` True
       let state = fromJust stateM
       view players state `shouldBe` []
@@ -35,7 +35,7 @@ spec =
       let playResult = play game
       printLog playResult
       extractGameResult playResult `shouldBe` NoWinner
-      let stateM = extractState playResult
+      let stateM = extractBoard playResult
       isJust stateM `shouldBe` True
       let state = fromJust stateM
       view players state `shouldBe` []
@@ -46,7 +46,7 @@ spec =
       let playResult = play game
       printLog playResult
       extractGameResult playResult `shouldBe` NoWinner
-      let stateM = extractState playResult
+      let stateM = extractBoard playResult
       isJust stateM `shouldBe` False
     it "just init + addPlayers" $ do
       let game = G [ Admin `does` Init deckId seed
@@ -55,7 +55,7 @@ spec =
       let playResult = play game
       printLog playResult
       extractGameResult playResult `shouldBe` NoWinner
-      let stateM = extractState playResult
+      let stateM = extractBoard playResult
       isJust stateM `shouldBe` True
       let state = fromJust stateM
       map getId (view players state) `shouldBe` [U "user2", U "user1"]
@@ -67,7 +67,7 @@ spec =
       let playResult = play game
       printLog playResult
       extractGameResult playResult `shouldBe` NoWinner
-      let stateM = extractState playResult
+      let stateM = extractBoard playResult
       isJust stateM `shouldBe` True
       let state = fromJust stateM
       map getId (view players state) `shouldBe` [U "user2", U "user1"]

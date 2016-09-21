@@ -12,8 +12,8 @@ import Game.Innovation.Cards
 getAllCardsFromMap :: Map a Stack -> Stack
 getAllCardsFromMap = Map.foldr (++) []
 
-getAllCurrentCards :: State -> Stack
-getAllCurrentCards (State _ drawStacks players _ _) = cardsInDrawStacks ++ cardsAtPlayers
+getAllCurrentCards :: Board -> Stack
+getAllCurrentCards (Board _ drawStacks players _ _) = cardsInDrawStacks ++ cardsAtPlayers
   where
     cardsInDrawStacks = getAllCardsFromMap drawStacks
     cardsAtPlayers    = concatMap getAllCardsOfPlayer players
@@ -23,7 +23,7 @@ getAllCurrentCards (State _ drawStacks players _ _) = cardsInDrawStacks ++ cards
 getAllStartingCards :: Stack
 getAllStartingCards = getAllCardsFromMap $ getDeck "base"
 
-exactlyAllCardsArePresent :: State -> Bool
+exactlyAllCardsArePresent :: Board -> Bool
 exactlyAllCardsArePresent state = undefined
   where
     noCardsAreDuplicates = undefined

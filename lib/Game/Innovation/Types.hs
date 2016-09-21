@@ -1,6 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE LambdaCase #-}
 module Game.Innovation.Types
        where
 
@@ -187,12 +188,17 @@ instance BoardC Board where
       advancePlayerOrder' (p1:(p2:ps)) | p1 == p2  = p2:ps
                                        | otherwise = p2:ps ++ [p1,p1]
 
-  getGameResult' board = let
+  determineGameResult = id -- TODO
+
+  getGameResult board = let
     ms = _machineState board
     in case ms of
       FinishedGame gr -> gr
       _               -> NoWinner
 
+does :: ActionToken Board actionToken =>
+        UserId -> actionToken -> Turn Board
+does = does' (Proxy :: Proxy Board)
 --------------------------------------------------------------------------------
 -- Generators
 --------------------------------------------------------------------------------

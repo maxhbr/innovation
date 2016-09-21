@@ -35,6 +35,7 @@ import           Game.Innovation.Rules
 --------------------------------------------------------------------------------
 -- Admin actions
 --------------------------------------------------------------------------------
+doesInSequence = undefined
 
 -- | Init
 -- Does:
@@ -42,34 +43,39 @@ import           Game.Innovation.Rules
 --  - Shuffle
 --  - DrawDominations
 data Init = Init DeckName Int
-          deriving (Show, Read)
-instance ActionC Board Init where
-  does userId (Init deckName seed) =
-    userId `onlyAdminIsAllowed`
-    mconcat [ userId `does` SetCardDeck deckName
-            , userId `does` Shuffle seed
-            , userId `does` DrawDominations ]
+          deriving (Eq, Show, Read)
+instance ActionToken Board Init where
+  getAction (Init deckName seed) = onlyAdminIsAllowed $
+                                   A $ \userId ->
+  -- TODO:
+  -- @
+  -- userId `doesInSequence` [ SetCardDeck deckName
+  --                         , Shuffle seed
+  --                         , DrawDominations ]
+  -- @
+    turnsToTransition [ userId `does` SetCardDeck deckName
+                        , userId `does` Shuffle seed
+                        , userId `does` DrawDominations ]
 
 -- | SetCardDeck
 data SetCardDeck = SetCardDeck DeckName
-                 deriving (Show, Read)
-instance ActionC Board SetCardDeck where
-  does userId (SetCardDeck deckName) =
-    userId `onlyAdminIsAllowed`
+                 deriving (Eq, Show, Read)
+instance ActionToken Board SetCardDeck where
+  getAction (SetCardDeck deckName) = onlyAdminIsAllowed $
+                                   A $ \userId ->
     T ( do
            log $ "Use the \"" ++ deckName ++ "\" card deck"
-           S.modify (\(G game, state) -> (G $ (userId `does` SetCardDeck deckName) : game
-                                         , state{ _drawStacks=getDeck deckName }))
+           S.modify (\board -> board{ _drawStacks=getDeck deckName })
       )
 
 
 -- | Shuffle
 -- create an empty game using a given seed
 data Shuffle = Shuffle Int
-             deriving (Show, Read)
-instance ActionC Board Shuffle where
-  does userId (Shuffle seed) =
-    userId `onlyAdminIsAllowed`
+             deriving (Eq, Show, Read)
+instance ActionToken Board Shuffle where
+  getAction (Shuffle seed) = onlyAdminIsAllowed $
+                             A $ \userId ->
     T ( do
            logForMe ("Shuffle with seed [" ++ show seed ++ "]")
              "Shuffle with seed [only visible for admin]"
@@ -77,10 +83,10 @@ instance ActionC Board Shuffle where
       )
 
 data DrawDominations = DrawDominations
-                     deriving (Show, Read)
-instance ActionC Board DrawDominations where
-  does userId DrawDominations =
-    userId `onlyAdminIsAllowed`
+                     deriving (Eq, Show, Read)
+instance ActionToken Board DrawDominations where
+  getAction DrawDominations = onlyAdminIsAllowed $
+                              A $ \userId ->
     T ( do
            log "Draw dominations"
            S.modify id -- TODO
@@ -89,10 +95,10 @@ instance ActionC Board DrawDominations where
 -- | AddPlayer
 -- add an player with a given playerId to the game
 data AddPlayer = AddPlayer String
-               deriving (Show, Read)
-instance ActionC Board AddPlayer where
-  does userId (AddPlayer playerId) =
-    userId `onlyAdminIsAllowed`
+               deriving (Eq, Show, Read)
+instance ActionToken Board AddPlayer where
+  getAction (AddPlayer playerId) = onlyAdminIsAllowed $
+                                   A $ \userId ->
     T ( do
            log ("Add player: " ++ playerId)
            state <- S.get
@@ -107,10 +113,10 @@ instance ActionC Board AddPlayer where
 -- | StartGame
 -- finish preperations of the game
 data StartGame = StartGame
-               deriving (Show, Read)
-instance ActionC Board StartGame where
-  does userId StartGame =
-    userId `onlyAdminIsAllowed`
+               deriving (Eq, Show, Read)
+instance ActionToken Board StartGame where
+  getAction StartGame = onlyAdminIsAllowed $
+                        A $ \userId ->
     (T ( do
             log "Start game"
             ps <- use players
@@ -130,7 +136,7 @@ instance ActionC Board StartGame where
        ))
 
 data DropPlayer = DropPlayer UserId
-                deriving (Show, Read)
+                deriving (Eq, Show, Read)
 
 data Undo = Undo
-          deriving (Show, Read)
+          deriving (Eq, Show, Read)
