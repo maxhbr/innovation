@@ -44,22 +44,22 @@ import           Game.Innovation.Rules
 data Init = Init DeckName Int
           deriving (Show, Read)
 instance ActionC Board Init where
-  toTransition' userId (Init deckName seed) =
+  does userId (Init deckName seed) =
     userId `onlyAdminIsAllowed`
-    actionsToTransition
-    [ userId `does` SetCardDeck deckName
-    , userId `does` Shuffle seed
-    , userId `does` DrawDominations ]
+    mconcat [ userId `does` SetCardDeck deckName
+            , userId `does` Shuffle seed
+            , userId `does` DrawDominations ]
 
 -- | SetCardDeck
 data SetCardDeck = SetCardDeck DeckName
                  deriving (Show, Read)
 instance ActionC Board SetCardDeck where
-  toTransition' userId (SetCardDeck deckName) =
+  does userId (SetCardDeck deckName) =
     userId `onlyAdminIsAllowed`
     T ( do
            log $ "Use the \"" ++ deckName ++ "\" card deck"
-           S.state (\state -> getStateResult state{ _drawStacks=getDeck deckName })
+           S.modify (\(G game, state) -> (G $ (userId `does` SetCardDeck deckName) : game
+                                         , state{ _drawStacks=getDeck deckName }))
       )
 
 
@@ -68,22 +68,22 @@ instance ActionC Board SetCardDeck where
 data Shuffle = Shuffle Int
              deriving (Show, Read)
 instance ActionC Board Shuffle where
-  toTransition' userId (Shuffle seed) =
+  does userId (Shuffle seed) =
     userId `onlyAdminIsAllowed`
     T ( do
            logForMe ("Shuffle with seed [" ++ show seed ++ "]")
              "Shuffle with seed [only visible for admin]"
-           S.state (getStateResult . shuffleState seed)
+           S.modify (shuffleState seed)
       )
 
 data DrawDominations = DrawDominations
                      deriving (Show, Read)
 instance ActionC Board DrawDominations where
-  toTransition' userId DrawDominations =
+  does userId DrawDominations =
     userId `onlyAdminIsAllowed`
     T ( do
            log "Draw dominations"
-           S.state getStateResult -- TODO
+           S.modify id -- TODO
       )
 
 -- | AddPlayer
@@ -91,7 +91,7 @@ instance ActionC Board DrawDominations where
 data AddPlayer = AddPlayer String
                deriving (Show, Read)
 instance ActionC Board AddPlayer where
-  toTransition' userId (AddPlayer playerId) =
+  does userId (AddPlayer playerId) =
     userId `onlyAdminIsAllowed`
     T ( do
            log ("Add player: " ++ playerId)
@@ -99,9 +99,8 @@ instance ActionC Board AddPlayer where
            case view machineState state of
              Prepare -> do
                let newPlayer = mkPlayer playerId
-               S.state (const (getStateResult $
-                               players %~ (newPlayer :) $
-                               state))
+               S.modify (const (players %~ (newPlayer :) $
+                                state))
              _       -> logError "not in prepare state."
       )
 
@@ -110,7 +109,7 @@ instance ActionC Board AddPlayer where
 data StartGame = StartGame
                deriving (Show, Read)
 instance ActionC Board StartGame where
-  toTransition' userId StartGame =
+  does userId StartGame =
     userId `onlyAdminIsAllowed`
     (T ( do
             log "Start game"
@@ -118,7 +117,7 @@ instance ActionC Board StartGame where
             if length ps >= 2 && length ps <=4
               then do
               -- Ask for first card
-              S.state getStateResult
+              S.modify id -- TODO
               else logError "Numer of players is not valid"
        )) <>
     -- ... wait..
@@ -128,7 +127,6 @@ instance ActionC Board StartGame where
             ps <- use players
             playerOrder .= map getId ps -- FALSE!
             machineState .= WaitForTurn
-            S.state getStateResult
        ))
 
 data DropPlayer = DropPlayer UserId

@@ -173,8 +173,8 @@ data Board = Board { _machineState :: MachineState
                    , _history      :: Game Board }
 makeLenses ''Board
 
-instance StateC Board where
-  emptyState = Board Prepare Map.empty [] [] (G [])
+instance BoardC Board where
+  emptyBoard = Board Prepare Map.empty [] [] (G [])
 
   getCurrentPlayer'  Board{ _playerOrder=[] }    = Admin
   getCurrentPlayer'  Board{ _playerOrder=order } = head order
@@ -187,15 +187,11 @@ instance StateC Board where
       advancePlayerOrder' (p1:(p2:ps)) | p1 == p2  = p2:ps
                                        | otherwise = p2:ps ++ [p1,p1]
 
-  getGameResult state = let
-    ms = _machineState state
+  getGameResult' board = let
+    ms = _machineState board
     in case ms of
       FinishedGame gr -> gr
       _               -> NoWinner
-
-does :: ActionC Board actionToken =>
-        UserId -> actionToken -> Action Board
-does = does' (Proxy :: Proxy Board)
 
 --------------------------------------------------------------------------------
 -- Generators
