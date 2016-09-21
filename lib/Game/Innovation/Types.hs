@@ -47,7 +47,9 @@ data Symbol = Castle | Tree | Crown | Bulb | Factory | Clock
 -- --------------------------------------------------------------------------------
 
 data Selector
-  = Hand
+  = RawSelector String -- ^ the verbal formulation of an selector
+
+  | Hand
   | Influence
   | StackOfColor Color
 --   -- -| TheCard Card
@@ -58,18 +60,14 @@ data Selector
 --   | HalfOf Selector
 --   | AllOf Selector
 --   | UpTo Selector
-  -- Raw
-  | RawSelector String
   deriving (Eq,Show)
 
 data DogmaDescription
-  = RawDescription String
-  --   D Action
-  -- | DD Action Selector
-  -- -- DogmaDescription combinators
+  = RawDescription String -- ^ the verbal formulation of an description
+
+  -- DogmaDescription combinators
   | YouMay DogmaDescription
   | AndAlsoDo DogmaDescription DogmaDescription
-  -- -- Raw
   deriving (Eq,Show)
 
 data Dogma
@@ -199,6 +197,7 @@ instance BoardC Board where
 does :: ActionToken Board actionToken =>
         UserId -> actionToken -> Turn Board
 does = does' (Proxy :: Proxy Board)
+
 --------------------------------------------------------------------------------
 -- Generators
 --------------------------------------------------------------------------------

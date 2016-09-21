@@ -53,9 +53,9 @@ instance ActionToken Board Init where
   --                         , Shuffle seed
   --                         , DrawDominations ]
   -- @
-    turnsToTransition [ userId `does` SetCardDeck deckName
-                        , userId `does` Shuffle seed
-                        , userId `does` DrawDominations ]
+    turnsToMove [ userId `does` SetCardDeck deckName
+                , userId `does` Shuffle seed
+                , userId `does` DrawDominations ]
 
 -- | SetCardDeck
 data SetCardDeck = SetCardDeck DeckName
@@ -63,7 +63,7 @@ data SetCardDeck = SetCardDeck DeckName
 instance ActionToken Board SetCardDeck where
   getAction (SetCardDeck deckName) = onlyAdminIsAllowed $
                                    A $ \userId ->
-    T ( do
+    M ( do
            log $ "Use the \"" ++ deckName ++ "\" card deck"
            S.modify (\board -> board{ _drawStacks=getDeck deckName })
       )
@@ -76,7 +76,7 @@ data Shuffle = Shuffle Int
 instance ActionToken Board Shuffle where
   getAction (Shuffle seed) = onlyAdminIsAllowed $
                              A $ \userId ->
-    T ( do
+    M ( do
            logForMe ("Shuffle with seed [" ++ show seed ++ "]")
              "Shuffle with seed [only visible for admin]"
            S.modify (shuffleState seed)
@@ -87,7 +87,7 @@ data DrawDominations = DrawDominations
 instance ActionToken Board DrawDominations where
   getAction DrawDominations = onlyAdminIsAllowed $
                               A $ \userId ->
-    T ( do
+    M ( do
            log "Draw dominations"
            S.modify id -- TODO
       )
@@ -99,7 +99,7 @@ data AddPlayer = AddPlayer String
 instance ActionToken Board AddPlayer where
   getAction (AddPlayer playerId) = onlyAdminIsAllowed $
                                    A $ \userId ->
-    T ( do
+    M ( do
            log ("Add player: " ++ playerId)
            state <- S.get
            case view machineState state of
@@ -117,7 +117,7 @@ data StartGame = StartGame
 instance ActionToken Board StartGame where
   getAction StartGame = onlyAdminIsAllowed $
                         A $ \userId ->
-    (T ( do
+    (M ( do
             log "Start game"
             ps <- use players
             if length ps >= 2 && length ps <=4
@@ -127,7 +127,7 @@ instance ActionToken Board StartGame where
               else logError "Numer of players is not valid"
        )) <>
     -- ... wait..
-    (T ( do
+    (M ( do
             -- play chosen cards
             -- determine starting player
             ps <- use players

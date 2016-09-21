@@ -5,20 +5,20 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
 module Game.MetaGame
-       -- ( IDAble (..)
-       -- , UserId (..), UserC (..), isAdmin
-       -- , BoardC (..), GameResult (..)
-       -- , Log (..), viewLog
-       -- , TransitionType, Transition (..)
-       -- , ActionToken (..), Action
-       -- , Game (..)
-       -- , actionToTransition
-       -- , play, extractGameResult, extractLog, extractState
-       -- , getCurrentPlayer
-       -- , log, logForMe, logError
-       -- , onlyAdminIsAllowed
-       -- )
-       where
+       ( IDAble (..)
+       , UserId (..), UserC (..), isAdmin
+       , BoardC (..), GameResult (..)
+       , Log (..), viewLog
+       , MoveType, Move (..)
+       , ActionToken (..), Action (..)
+       , Turn (..), does'
+       , Game (..)
+       , turnToMove, turnsToMove
+       , play, extractGameResult, extractLog, extractBoard
+       , getCurrentPlayer
+       , log, logForMe, logError
+       , onlyAdminIsAllowed
+       ) where
 
 import           Prelude hiding (log)
 import           Data.Proxy
@@ -119,46 +119,52 @@ instance Monoid Log where
     in T.concat [ l1 userId, sep ,l2 userId ]
 
 --------------------------------------------------------------------------------
--- ** Transitions
+-- ** Moves
+-- A move is the actual change on the board
 
--- | The type of an transition
-type TransitionType board r = StateT board -- ^ uses StateT to handle the state of the board as 'board'
-                              (ExceptT Text -- ^ uses ExceptT to communicate failures
-                               (WriterT Log -- ^ uses WriterT to log
-                                Identity))
-                              r -- ^ the value which is calculated
-type TransitionResult board r = (Either Text -- ^ this maybe contains the error text
-                                 (r, -- ^ this is the calculated result
-                                  board) -- ^ this is the state of the board at the end of the calculation
-                                , Log) -- ^ this contains the log
+-- | The type of an move
+type MoveType board r = StateT board -- ^ uses StateT to handle the state of the board as 'board'
+                        ( ExceptT Text -- ^ uses ExceptT to communicate failures
+                          ( WriterT Log -- ^ uses WriterT to log
+                                    Identity ) )
+                        r -- ^ the value which is calculated
 
--- | Something of TransitionType can be applied to an inital board state
-runTransitionType :: board -> TransitionType board a -> TransitionResult board a
-runTransitionType initial transition = (runIdentity .
-                                        W.runWriterT .
-                                        E.runExceptT .
-                                        S.runStateT transition) initial
+-- | the result of a move is the resulting state together with a bunch of metadata
+type MoveResult board r = ( Either Text -- ^ this maybe contains the error text
+                            ( r -- ^ this is the calculated result
+                            , board ) -- ^ this is the state of the board at the end of the calculation
+                          , Log ) -- ^ this contains the log
 
--- | The wrapper for a transition
--- a transition does not calculate anything, it just modifies the state (+ failures + log)
-newtype Transition board = T {unpackTransition :: TransitionType board ()}
+-- | Something of MoveType can be applied to an inital board state
+runMoveType :: board -> MoveType board a -> MoveResult board a
+runMoveType initial move = (runIdentity .
+                            W.runWriterT .
+                            E.runExceptT .
+                            S.runStateT move) initial
 
--- runTransition :: board -> Transition board -> TransitionResult board ()
--- runTransition initial (T transition) = runTransitionType initial transition
+-- | The wrapper for a move
+-- a move does not calculate anything, it just modifies the state (+ failures + log)
+newtype Move board = M {unpackMove :: MoveType board ()}
 
--- | Transitions can be combined in an monoidal way
 instance BoardC board =>
-         Monoid (Transition board) where
-  mempty                = T $ S.modify id -- TODO: make easyier
-  mappend (T t1) (T t2) = T $ t1 >> t2
+         Monoid (Move board) where
+  mempty                = M $ S.modify id -- TODO: make easyier
+  mappend (M t1) (M t2) = M $ t1 >> t2
 
 --------------------------------------------------------------------------------
--- ** ActionTokens, Actions and Turns
---  - it is described by the resulting 'Transition' on the 'board'
---  - An action knows its acting player
---  - it is referenced by a token
+-- ** Actions
+-- An action is something a player can take and it results in a move on the board
 
-newtype Action board = A { unpackAction :: UserId -> Transition board }
+newtype Action board = A { unpackAction :: UserId -> Move board }
+
+instance BoardC board =>
+         Monoid (Action board) where
+  mempty                = A $ const mempty
+  mappend (A a1) (A a2) = A $ \uid -> a1 uid <> a2 uid
+
+--------------------------------------------------------------------------------
+-- ** ActionTokens
+-- ActionTokens are used to identify actions
 
 -- | an actionToken is something which
 --   - has a Read and a Show instance
@@ -166,6 +172,10 @@ newtype Action board = A { unpackAction :: UserId -> Transition board }
 class (BoardC board, Eq actionToken, Read actionToken, Show actionToken) =>
       ActionToken board actionToken where
   getAction :: actionToken -> Action board
+
+--------------------------------------------------------------------------------
+-- ** Turns
+-- A turn is the choice of an action, taken by an player
 
 -- | A turn is a action which is taken by some player
 data Turn board = forall actionToken.
@@ -186,13 +196,13 @@ instance Eq (Turn board) where
   act1 == act2 = show act1 == show act2
 
 -- *** related helper
--- | redeem the described Transition from an turn
-turnToTransition :: Turn board -> Transition board
-turnToTransition (Turn userId actionToken) = (unpackAction $ getAction actionToken) userId
+-- | redeem the described Move from an turn
+turnToMove :: Turn board -> Move board
+turnToMove (Turn userId actionToken) = (unpackAction $ getAction actionToken) userId
 
-turnsToTransition :: BoardC board =>
-                     [Turn board] -> Transition board
-turnsToTransition = mconcat . map turnToTransition
+turnsToMove :: BoardC board =>
+               [Turn board] -> Move board
+turnsToMove = mconcat . map turnToMove
 
 --------------------------------------------------------------------------------
 -- ** Game
@@ -206,7 +216,7 @@ newtype Game state = G [Turn state]
 --------------------------------------------------------------------------------
 
 getGameResultM :: BoardC s =>
-                  TransitionType s GameResult
+                  MoveType s GameResult
 getGameResultM = S.gets getGameResult
 
 -- | take an action and wrap it to also take care of
@@ -214,12 +224,12 @@ getGameResultM = S.gets getGameResult
 --  - some rules:
 --    - a game which is already finished should not be modified
 --    - only the current user is allowed to act
-actionToWrappedTransition :: BoardC b =>
-                Turn b -> Transition b
-actionToWrappedTransition turn = let
+actionToWrappedMove :: BoardC b =>
+                       Turn b -> Move b
+actionToWrappedMove turn = let
   -- | A finished game should not be modified
   onlyIfGameHasNotYetFinished :: BoardC s =>
-                                 TransitionType s ()
+                                 MoveType s ()
   onlyIfGameHasNotYetFinished = do
     gameResult <- getGameResultM
     unless (gameResult == NoWinner) $
@@ -228,30 +238,30 @@ actionToWrappedTransition turn = let
   -- | Only the current player (determined by the board-state) is allowed to act
   -- (or Admin)
   onlyCurrentUserIsAllowedToAct :: BoardC s =>
-                                   TransitionType s ()
+                                   MoveType s ()
   onlyCurrentUserIsAllowedToAct = do
     let actingUser = getActingPlayer turn
     currentPlayer <- getCurrentPlayer
     unless (actingUser == currentPlayer || isAdmin actingUser) $
       logError $ "the user " ++ show actingUser ++ " is not allowed to take an turn"
 
-  in T $ do
+  in M $ do
     onlyIfGameHasNotYetFinished
     onlyCurrentUserIsAllowedToAct
-    unpackTransition $ turnToTransition turn
+    unpackMove $ turnToMove turn
     S.modify determineGameResult
 
-actionsToWrappedTransition :: BoardC board =>
-                              [Turn board] -> Transition board
-actionsToWrappedTransition = mconcat . map actionToWrappedTransition
+actionsToWrappedMove :: BoardC board =>
+                              [Turn board] -> Move board
+actionsToWrappedMove = mconcat . map actionToWrappedMove
 
-type PlayResult board = TransitionResult board GameResult
+type PlayResult board = MoveResult board GameResult
 
 -- | A game can be played and the resulting board as 'PlayResult board' is returned
 play :: BoardC board =>
         Game board -> PlayResult board
-play (G game) = runTransitionType emptyBoard $ do
-  unpackTransition $ actionsToWrappedTransition game
+play (G game) = runMoveType emptyBoard $ do
+  unpackMove $ actionsToWrappedMove game
   getGameResultM
 
 --------------------------------------------------------------------------------
@@ -274,7 +284,7 @@ extractBoard _                   = Nothing
 
 -- ** helper for logging
 log :: BoardC s =>
-       String -> TransitionType s ()
+       String -> MoveType s ()
 log text = do
     loggingUser <- getCurrentPlayer
     lift . lift . W.tell .
@@ -284,7 +294,7 @@ log text = do
       show loggingUser ++ ": " ++ text
 
 logForMe :: BoardC s =>
-            String -> String -> TransitionType s ()
+            String -> String -> MoveType s ()
 logForMe textPrivate textPublic = do
     loggingUser <- getCurrentPlayer
     lift . lift . W.tell . Log $
@@ -295,24 +305,19 @@ logForMe textPrivate textPublic = do
                else textPublic
 
 logError :: BoardC s =>
-            String -> TransitionType s a
+            String -> MoveType s a
 logError error = do
   lift . lift . W.tell . Log . const . T.pack $ "Error: " ++ error
   lift . E.throwE $ T.pack error
 
--- ** helper for defining Transactions and Transaction like things
+-- ** helper for defining Actions and Moves
 
 getCurrentPlayer :: BoardC s =>
-                    TransitionType s UserId
+                    MoveType s UserId
 getCurrentPlayer = S.gets getCurrentPlayer'
-
-
--- onlyAdminIsAllowed :: UserId -> Transition state ->  Transition state
--- onlyAdminIsAllowed Admin t = t
--- onlyAdminIsAllowed _     _ = T $ lift . E.throwE $ T.pack "Action was not authorized"
 
 onlyAdminIsAllowed :: BoardC board =>
                       Action board -> Action board
 onlyAdminIsAllowed (A t) = A $ \case
   Admin -> t Admin
-  _     -> T $ logError "Action was not authorized"
+  _     -> M $ logError "Action was not authorized"
