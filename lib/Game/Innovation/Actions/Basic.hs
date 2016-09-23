@@ -29,8 +29,10 @@ import Game.Innovation.Types
 --------------------------------------------------------------------------------
 -- | Draw
 data Draw = Draw
-          deriving (Read, Show)
-
+          deriving (Eq, Read, Show)
+instance ActionToken Board Draw where
+  getAction Draw = A $ \userId ->
+    undefined
 -- instance UserActionC State Draw where
 --   getTransition' _ state | isNothing currentPlayer = fail "not able to Draw"
 --                          | otherwise               = W.writer (Right undefined, logs)
@@ -41,12 +43,21 @@ data Draw = Draw
 
 -- | Play
 data Play = Play CardId
-          deriving (Read, Show)
+          deriving (Eq, Read, Show)
+instance ActionToken Board Play where
+  getAction (Play cardId) = A $ \userId ->
+    undefined
 
 -- | Dominate
 data Dominate = Dominate Age
-              deriving (Read, Show)
+              deriving (Eq, Read, Show)
+instance ActionToken Board Dominate where
+  getAction (Dominate age) = A $ \userId ->
+    undefined
 
 -- | Activate
 data Activate = Activate Color
-              deriving (Read, Show)
+              deriving (Eq, Read, Show)
+instance ActionToken Board Activate where
+  getAction (Activate color) = A $ \userId ->
+    undefined

@@ -30,8 +30,9 @@ spec =
       isJust stateM `shouldBe` True
       let state = fromJust stateM
       view players state `shouldBe` []
+      view machineState state `shouldBe` Prepare
     it "just init" $ do
-      let game = G [ Admin `does` Init deckId seed ]
+      let game = G [ Admin `does` Init deckId ]
       let playResult = play game
       printLog playResult
       extractGameResult playResult `shouldBe` NoWinner
@@ -40,16 +41,17 @@ spec =
       let state = fromJust stateM
       view players state `shouldBe` []
       isJust (Map.lookup Age1 (view drawStacks state)) `shouldBe` True
+      view machineState state `shouldBe` Prepare
     it "just init and start" $ do
-      let game = G [ Admin `does` Init deckId seed
-                   , Admin `does` StartGame ]
+      let game = G [ Admin `does` Init deckId
+                   , Admin `does` StartGame seed ]
       let playResult = play game
       printLog playResult
       extractGameResult playResult `shouldBe` NoWinner
       let stateM = extractBoard playResult
       isJust stateM `shouldBe` False
     it "just init + addPlayers" $ do
-      let game = G [ Admin `does` Init deckId seed
+      let game = G [ Admin `does` Init deckId
                    , Admin `does` AddPlayer "user1"
                    , Admin `does` AddPlayer "user2" ]
       let playResult = play game
@@ -59,18 +61,19 @@ spec =
       isJust stateM `shouldBe` True
       let state = fromJust stateM
       map getId (view players state) `shouldBe` [U "user2", U "user1"]
+      view machineState state `shouldBe` Prepare
     it "just init + addPlayers + StartGame" $ do
-      let game = G [ Admin `does` Init deckId seed
+      let game = G [ Admin `does` Init deckId
                    , Admin `does` AddPlayer "user1"
                    , Admin `does` AddPlayer "user2"
-                   , Admin `does` StartGame ]
+                   , Admin `does` StartGame seed]
       let playResult = play game
       printLog playResult
       extractGameResult playResult `shouldBe` NoWinner
       let stateM = extractBoard playResult
       isJust stateM `shouldBe` True
       let state = fromJust stateM
-      map getId (view players state) `shouldBe` [U "user2", U "user1"]
+      length (view players state) `shouldBe` 2
       view machineState state `shouldNotBe` Prepare
 
 main :: IO ()

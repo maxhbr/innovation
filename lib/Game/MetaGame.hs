@@ -210,6 +210,7 @@ turnsToMove = mconcat . map turnToMove
 -- | A game consists of all the turns, i.e. taken actions, in chronological order
 -- the last taken action is the head
 newtype Game state = G [Turn state]
+                   deriving (Show)
 
 --------------------------------------------------------------------------------
 -- * play

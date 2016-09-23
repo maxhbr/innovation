@@ -42,19 +42,12 @@ doesInSequence = undefined
 --  - SetCardDeck
 --  - Shuffle
 --  - DrawDominations
-data Init = Init DeckName Int
+data Init = Init DeckName
           deriving (Eq, Show, Read)
 instance ActionToken Board Init where
-  getAction (Init deckName seed) = onlyAdminIsAllowed $
-                                   A $ \userId ->
-  -- TODO:
-  -- @
-  -- userId `doesInSequence` [ SetCardDeck deckName
-  --                         , Shuffle seed
-  --                         , DrawDominations ]
-  -- @
+  getAction (Init deckName) = onlyAdminIsAllowed $
+                              A $ \userId ->
     turnsToMove [ userId `does` SetCardDeck deckName
-                , userId `does` Shuffle seed
                 , userId `does` DrawDominations ]
 
 -- | SetCardDeck
@@ -112,11 +105,12 @@ instance ActionToken Board AddPlayer where
 
 -- | StartGame
 -- finish preperations of the game
-data StartGame = StartGame
+data StartGame = StartGame Int
                deriving (Eq, Show, Read)
 instance ActionToken Board StartGame where
-  getAction StartGame = onlyAdminIsAllowed $
-                        A $ \userId ->
+  getAction (StartGame seed) = onlyAdminIsAllowed $
+                               A $ \userId ->
+    (turnToMove $ userId `does` Shuffle seed) <>
     (M ( do
             log "Start game"
             ps <- use players

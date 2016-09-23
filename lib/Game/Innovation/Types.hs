@@ -17,34 +17,42 @@ import qualified Control.Lens as L
 
 import           Game.MetaGame
 
+class PrettyPrint a where
+  pp' :: a -> String
+  pp :: a -> IO ()
+  pp = putStrLn . pp'
+
 --------------------------------------------------------------------------------
 -- Basic types
 --------------------------------------------------------------------------------
 
 data Color = Blue | Purple | Red | Yellow | Green
   deriving (Eq,Show,Read,Enum,Ord,Bounded)
+instance PrettyPrint Color where
+  pp' = show
+
 colors :: [Color]
 colors = [minBound ..]
 
 data Age = Age1 | Age2 | Age3 | Age4 | Age5 | Age6 | Age7 | Age8 | Age9 | Age10
   deriving (Eq,Show,Read,Enum,Ord,Bounded)
+instance PrettyPrint Age where
+  pp' = show
+
 ages :: [Age]
-ages =  [minBound ..]
+ages = [minBound ..]
 
 data Symbol = Castle | Tree | Crown | Bulb | Factory | Clock
   deriving (Eq,Show,Read,Enum,Ord,Bounded)
+instance PrettyPrint Symbol where
+  pp' = show
+
+symbols :: [Symbol]
+symbols = [minBound ..]
 
 --------------------------------------------------------------------------------
--- Actions
+-- Dogmas
 --------------------------------------------------------------------------------
-
--- data Action
---   =  RawAction String
---   deriving (Eq,Show)
-
--- --------------------------------------------------------------------------------
--- -- Dogmas
--- --------------------------------------------------------------------------------
 
 data Selector
   = RawSelector String -- ^ the verbal formulation of an selector
@@ -112,12 +120,14 @@ data Card
   deriving (Eq,Show)
 makeLenses ''Card
 
-data CardId = CardId String
+data CardId = CardId { unpackCardId :: String }
             deriving (Eq, Show, Read)
 
 instance IDAble CardId Card where
-  getId Card{ _title=t, _age=a } = CardId $ show a ++ ":" ++ t :: CardId
+  getId Card{ _title=t, _age=a } = CardId $ "[" ++ show a ++ ": " ++ t ++ "]"
 
+instance PrettyPrint Card where
+  pp' = unpackCardId . getId
 --------------------------------------------------------------------------------
 -- Players
 --------------------------------------------------------------------------------
@@ -170,6 +180,7 @@ data Board = Board { _machineState :: MachineState
                    , _players      :: [Player]
                    , _playerOrder  :: PlayerOrder
                    , _history      :: Game Board }
+             deriving (Show)
 makeLenses ''Board
 
 instance BoardC Board where
@@ -210,10 +221,11 @@ mkPlayer playerId = Player (U playerId)
                            []
                            []
 
+-- | shuffle the draw stacks and the players
 shuffleState :: Int -> Board -> Board
-shuffleState seed gs = gs{ _drawStacks=permutatedDS }
+shuffleState seed gs = L.over players shuffle gs{ _drawStacks=permutatedDS }
   where
     stdGen = mkStdGen seed
     shuffle []    = []
-    shuffle stack = shuffle' stack (length stack) stdGen
+    shuffle list = shuffle' list (length list) stdGen
     permutatedDS = Map.map shuffle $ _drawStacks gs
