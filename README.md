@@ -46,29 +46,32 @@ type History = [UserAction State]
 ```
 and might look like
 ```haskell
+deckName :: String
 Admin, p1, p2 :: UserId
 p1 = U "player1"
 p2 = U "Player2"
 seed :: Integer
 seed = 12345
 
-[ Admin `does` Init seed
-, Admin `does` AddPlayer p1
-, Admin `does` AddPlayer p2
-, Admin `does` StartGame
-, p2    `chooses` age1:agriculture
-, p1    `chooses` age1:clothing
-, Admin `does` DeterminesTurnOrder
-, p2    `does` Draw
-, p1    `does` Draw
-, p1    `does` Activate Yellow
-, p2    `does` Choose age1:someCard
-, p2    `does` Play age1:codeOfLaws
-, p2    `does` Activate Purple
-, p1    `does` Dominate Age1
-, p1    `does` Draw
-, [...]
-]
+G [ Admin `does` Init deckName
+  , Admin `does` AddPlayer p1
+  , Admin `does` AddPlayer p2
+  , Admin `does` StartGame seed
+  , p2    `chooses` age1:agriculture
+  , p1    `chooses` age1:clothing
+  , Admin `does` DeterminesTurnOrder
+  , p2    `does` Draw
+  , p1    `does` Draw
+  , p1    `does` Activate Yellow
+  , p2    `does` Choose age1:someCard
+  , p2    `chooses` ToPlayMaybe
+  , p1    `chooses` ToPlayMaybe
+  , p2    `does` Play age1:codeOfLaws
+  , p2    `does` Activate Purple
+  , p1    `does` Dominate Age1
+  , p1    `does` Draw
+  , [...]
+  ]
 ```
 
 ### More information:

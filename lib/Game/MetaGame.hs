@@ -34,7 +34,7 @@ import           Control.Monad.Trans.Writer (WriterT)
 import qualified Control.Monad.Trans.Writer as W
 import           Control.Monad.Trans.Except (ExceptT)
 import qualified Control.Monad.Trans.Except as E
-import           Control.Monad.Trans.State.Lazy (StateT)
+import           Control.Monad.Trans.State.Lazy (State, StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
 
@@ -70,7 +70,7 @@ type UserC user = IDAble UserId user
 -- ** State
 
 data GameResult = NoWinner
-                | WinningOrder [UserId]
+                | Winner UserId
                 deriving (Show,Eq,Read)
 
 class BoardC board where
@@ -83,10 +83,8 @@ class BoardC board where
   -- | the current player is done with its action
   advancePlayerOrder :: board -> board
 
-  -- | determineWinner
-  determineGameResult :: board -> board
-
   -- | unpack the currently known result from the board
+  -- If there is a winner, the board should know about it
   getGameResult :: board -> GameResult
 
 instance BoardC board =>
@@ -94,7 +92,6 @@ instance BoardC board =>
   emptyBoard          = (G [], emptyBoard)
   getCurrentPlayer'   = getCurrentPlayer' . L.view L._2
   advancePlayerOrder  = L.over L._2 advancePlayerOrder
-  determineGameResult = L.over L._2 determineGameResult
   getGameResult       = getGameResult . L.view L._2
 
 --------------------------------------------------------------------------------
@@ -126,21 +123,25 @@ instance Monoid Log where
 type MoveType board r = StateT board -- ^ uses StateT to handle the state of the board as 'board'
                         ( ExceptT Text -- ^ uses ExceptT to communicate failures
                           ( WriterT Log -- ^ uses WriterT to log
-                                    Identity ) )
+                                    ( State (Game board) -- ^ the history of the game
+                                    )
+                          )
+                        )
                         r -- ^ the value which is calculated
 
 -- | the result of a move is the resulting state together with a bunch of metadata
-type MoveResult board r = ( Either Text -- ^ this maybe contains the error text
-                            ( r -- ^ this is the calculated result
-                            , board ) -- ^ this is the state of the board at the end of the calculation
-                          , Log ) -- ^ this contains the log
+type MoveResult board r = (( Either Text -- ^ this maybe contains the error text
+                             ( r -- ^ this is the calculated result
+                             , board ) -- ^ this is the state of the board at the end of the calculation
+                           , Log ) -- ^ this contains the log
+                          , Game board ) -- ^ the history of the game
 
 -- | Something of MoveType can be applied to an inital board state
 runMoveType :: board -> MoveType board a -> MoveResult board a
-runMoveType initial move = (runIdentity .
-                            W.runWriterT .
-                            E.runExceptT .
-                            S.runStateT move) initial
+runMoveType initial move = ((S.runState .
+                             W.runWriterT .
+                             E.runExceptT .
+                             S.runStateT move) initial) (G [])
 
 -- | The wrapper for a move
 -- a move does not calculate anything, it just modifies the state (+ failures + log)
@@ -250,7 +251,6 @@ actionToWrappedMove turn = let
     onlyIfGameHasNotYetFinished
     onlyCurrentUserIsAllowedToAct
     unpackMove $ turnToMove turn
-    S.modify determineGameResult
 
 actionsToWrappedMove :: BoardC board =>
                               [Turn board] -> Move board
@@ -269,15 +269,15 @@ play (G game) = runMoveType emptyBoard $ do
 -- ** related helper
 
 extractGameResult :: PlayResult board -> GameResult
-extractGameResult (Right (result,_),_) = result
-extractGameResult _                    = NoWinner
+extractGameResult ((Right (result,_),_),_) = result
+extractGameResult _                        = NoWinner
 
 extractLog :: PlayResult board -> Log
-extractLog (_,log) = log
+extractLog ((_,log),_) = log
 
 extractBoard :: PlayResult board -> Maybe board
-extractBoard (Right (_,board),_) = Just board
-extractBoard _                   = Nothing
+extractBoard ((Right (_,board),_),_) = Just board
+extractBoard _                       = Nothing
 
 --------------------------------------------------------------------------------
 -- * Other helper for working in the monad

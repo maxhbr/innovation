@@ -29,10 +29,11 @@ import Game.Innovation.Types
 -- Chooseable actions
 --------------------------------------------------------------------------------
 
+--------------------------------------------------------------------------------
 -- | Draw an card and put it into an temporary stack
 data DrawAnd = forall actionToken.
                (Read actionToken, Show actionToken, ActionToken Board actionToken) =>
-              DrawAnd actionToken
+               DrawAnd actionToken
 
 instance Eq DrawAnd where
   (DrawAnd at1) == (DrawAnd at2) = show at1 == show at2
@@ -44,14 +45,25 @@ instance Show DrawAnd where
 
 instance ActionToken Board DrawAnd where
   getAction (DrawAnd actionToken) = A $ \userId ->
+    -- Draw
+    -- use actionToken on drawnCard
     undefined
 
+--------------------------------------------------------------------------------
+-- | take all cards of the intermediate stack and put them into the hand
+data PutIntoHand = PutIntoHand
+                 deriving (Eq, Read, Show)
+instance ActionToken Board PutIntoHand where
+  getAction PutIntoHand = A $ \userId ->
+    undefined
+
+
+--------------------------------------------------------------------------------
 -- | Draw
 data Draw = Draw
           deriving (Eq, Read, Show)
 instance ActionToken Board Draw where
-  getAction Draw = A $ \userId ->
-    undefined
+  getAction Draw = getAction (DrawAnd PutIntoHand)
 -- instance UserActionC State Draw where
 --   getTransition' _ state | isNothing currentPlayer = fail "not able to Draw"
 --                          | otherwise               = W.writer (Right undefined, logs)
@@ -60,6 +72,7 @@ instance ActionToken Board Draw where
 --       currentDrawAge = getCurrentDrawAge (fromJust currentPlayer) state
 --       logs           = undefined
 
+--------------------------------------------------------------------------------
 -- | Play
 data Play = Play CardId
           deriving (Eq, Read, Show)
@@ -67,6 +80,7 @@ instance ActionToken Board Play where
   getAction (Play cardId) = A $ \userId ->
     undefined
 
+--------------------------------------------------------------------------------
 -- | Dominate
 data Dominate = Dominate Age
               deriving (Eq, Read, Show)
@@ -74,6 +88,7 @@ instance ActionToken Board Dominate where
   getAction (Dominate age) = A $ \userId ->
     undefined
 
+--------------------------------------------------------------------------------
 -- | Activate
 data Activate = Activate Color
               deriving (Eq, Read, Show)

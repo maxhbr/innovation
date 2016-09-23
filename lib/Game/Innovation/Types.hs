@@ -53,13 +53,18 @@ symbols = [minBound ..]
 --------------------------------------------------------------------------------
 -- Dogmas
 --------------------------------------------------------------------------------
+data StackId = Hand UserId
+             | PlayStack UserId Color
+             | Influence UserId
+             | Dominations UserId
+             | DrawStack Age
+             deriving (Eq, Show, Read)
 
 data Selector
   = RawSelector String -- ^ the verbal formulation of an selector
 
-  | Hand
-  | Influence
-  | StackOfColor Color
+  | TheStackOfPlayer UserId StackId
+--  | TheStackWithCard CardId
 --   -- -| TheCard Card
 --   -- Selector combinators
 --   | OrSelector [Selector]
@@ -197,8 +202,6 @@ instance BoardC Board where
       advancePlayerOrder' [p]                      = [p]
       advancePlayerOrder' (p1:(p2:ps)) | p1 == p2  = p2:ps
                                        | otherwise = p2:ps ++ [p1,p1]
-
-  determineGameResult = id -- TODO
 
   getGameResult board = let
     ms = _machineState board
