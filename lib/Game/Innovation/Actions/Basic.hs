@@ -9,9 +9,10 @@ module Game.Innovation.Actions.Basic
        , Activate (..)
        ) where
 
-import Data.Map (Map)
+import           Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe
+import           Data.Maybe
+import           Control.Monad
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Writer (WriterT)
 import qualified Control.Monad.Trans.Writer as W
@@ -19,15 +20,25 @@ import           Control.Monad.Trans.Except (ExceptT)
 import qualified Control.Monad.Trans.Except as E
 import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
-import Data.Proxy
-import Control.Lens
+import           Data.Proxy
+import           Control.Lens
 
-import Game.MetaGame
-import Game.Innovation.Types
+import           Game.MetaGame
+import           Game.Innovation.Types
 
 --------------------------------------------------------------------------------
 -- Chooseable actions
 --------------------------------------------------------------------------------
+
+drawAnd :: ActionWR Board CardId
+drawAnd = A $ \userId ->
+  undefined
+
+drawNAnd :: Int -> ActionWR Board [CardId]
+drawNAnd n = A $ \userId ->
+  M (replicateM n
+     (unpackMove
+      (unpackAction drawAnd userId)))
 
 --------------------------------------------------------------------------------
 -- | Draw an card and put it into an temporary stack

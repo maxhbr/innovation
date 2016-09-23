@@ -4,13 +4,14 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE CPP #-}
 module Game.MetaGame
        ( IDAble (..)
        , UserId (..), UserC (..), isAdmin
        , BoardC (..), GameResult (..)
        , Log (..), viewLog
-       , MoveType, Move (..)
-       , ActionToken (..), Action (..)
+       , MoveType, MoveWR (..), Move (..)
+       , ActionToken (..), ActionWR (..), Action (..)
        , Turn (..), does'
        , Game (..)
        , turnToMove, turnsToMove
@@ -80,19 +81,15 @@ class BoardC board where
   -- if another user is acting, the game fails
   getCurrentPlayer' :: board -> UserId
 
+  -- | get the player data by his 'UserId'
+  getPlayerById' :: UserC user => UserId -> board -> Maybe user
+
   -- | the current player is done with its action
   advancePlayerOrder :: board -> board
 
   -- | unpack the currently known result from the board
   -- If there is a winner, the board should know about it
   getGameResult :: board -> GameResult
-
-instance BoardC board =>
-         BoardC (Game board, board) where
-  emptyBoard          = (G [], emptyBoard)
-  getCurrentPlayer'   = getCurrentPlayer' . L.view L._2
-  advancePlayerOrder  = L.over L._2 advancePlayerOrder
-  getGameResult       = getGameResult . L.view L._2
 
 --------------------------------------------------------------------------------
 -- ** Log
@@ -120,32 +117,48 @@ instance Monoid Log where
 -- A move is the actual change on the board
 
 -- | The type of an move
-type MoveType board r = StateT board -- ^ uses StateT to handle the state of the board as 'board'
-                        ( ExceptT Text -- ^ uses ExceptT to communicate failures
-                          ( WriterT Log -- ^ uses WriterT to log
-                                    ( State (Game board) -- ^ the history of the game
-                                    )
-                          )
-                        )
-                        r -- ^ the value which is calculated
+type InnerMoveType board = ExceptT Text -- ^ uses ExceptT to communicate failures
+                           ( WriterT Log -- ^ uses WriterT to log
+                                     ( State (Game board) -- ^ the history of the game
+                                     )
+                           )
 
 -- | the result of a move is the resulting state together with a bunch of metadata
-type MoveResult board r = (( Either Text -- ^ this maybe contains the error text
-                             ( r -- ^ this is the calculated result
-                             , board ) -- ^ this is the state of the board at the end of the calculation
-                           , Log ) -- ^ this contains the log
+type InnerMoveResult board r = ( ( Either Text -- ^ this maybe contains the error text
+                                           r -- ^ this is the calculated result
+                                 , Log ) -- ^ this contains the log
+                               , Game board ) -- ^ the history of the game
+
+runInnerMoveType :: BoardC board =>
+                    InnerMoveType board a -> InnerMoveResult board a
+runInnerMoveType imt = (S.runState .
+                        W.runWriterT .
+                        E.runExceptT ) imt (G [])
+
+-- | The type of an move
+type MoveType board = StateT board -- ^ uses StateT to handle the state of the board as 'board'
+                      ( InnerMoveType board
+                      )
+
+-- | the result of a move is the resulting state together with a bunch of metadata
+type MoveResult board r = ( ( Either Text -- ^ this maybe contains the error text
+                                     ( r -- ^ this is the calculated result
+                                     , board ) -- ^ this is the state of the board at the end of the calculation
+                            , Log ) -- ^ this contains the log
                           , Game board ) -- ^ the history of the game
 
 -- | Something of MoveType can be applied to an inital board state
 runMoveType :: board -> MoveType board a -> MoveResult board a
-runMoveType initial move = ((S.runState .
-                             W.runWriterT .
-                             E.runExceptT .
-                             S.runStateT move) initial) (G [])
+runMoveType initial move = (S.runState .
+                            W.runWriterT .
+                            E.runExceptT .
+                            S.runStateT move) initial (G [])
 
 -- | The wrapper for a move
--- a move does not calculate anything, it just modifies the state (+ failures + log)
-newtype Move board = M {unpackMove :: MoveType board ()}
+-- a 'MoveWR' is a 'Move' which returns something
+newtype MoveWR board r = M {unpackMove :: MoveType board r}
+-- | a 'Move' does not calculate anything, it just modifies the state (+ failures + log)
+type Move board = MoveWR board ()
 
 instance BoardC board =>
          Monoid (Move board) where
@@ -156,7 +169,8 @@ instance BoardC board =>
 -- ** Actions
 -- An action is something a player can take and it results in a move on the board
 
-newtype Action board = A { unpackAction :: UserId -> Move board }
+newtype ActionWR board r = A { unpackAction :: UserId -> MoveWR board r }
+type Action board = ActionWR board ()
 
 instance BoardC board =>
          Monoid (Action board) where
@@ -217,67 +231,48 @@ newtype Game state = G [Turn state]
 -- * play
 --------------------------------------------------------------------------------
 
-getGameResultM :: BoardC s =>
-                  MoveType s GameResult
-getGameResultM = S.gets getGameResult
+type PlayResult board = InnerMoveResult board board
 
--- | take an action and wrap it to also take care of
---  - the game history
---  - some rules:
---    - a game which is already finished should not be modified
---    - only the current user is allowed to act
-actionToWrappedMove :: BoardC b =>
-                       Turn b -> Move b
-actionToWrappedMove turn = let
-  -- | A finished game should not be modified
-  onlyIfGameHasNotYetFinished :: BoardC s =>
-                                 MoveType s ()
-  onlyIfGameHasNotYetFinished = do
-    gameResult <- getGameResultM
-    unless (gameResult == NoWinner) $
-      logError $ "the game is already over"
-
-  -- | Only the current player (determined by the board-state) is allowed to act
-  -- (or Admin)
-  onlyCurrentUserIsAllowedToAct :: BoardC s =>
-                                   MoveType s ()
-  onlyCurrentUserIsAllowedToAct = do
-    let actingUser = getActingPlayer turn
-    currentPlayer <- getCurrentPlayer
-    unless (actingUser == currentPlayer || isAdmin actingUser) $
-      logError $ "the user " ++ show actingUser ++ " is not allowed to take an turn"
-
-  in M $ do
-    onlyIfGameHasNotYetFinished
-    onlyCurrentUserIsAllowedToAct
-    unpackMove $ turnToMove turn
-
-actionsToWrappedMove :: BoardC board =>
-                              [Turn board] -> Move board
-actionsToWrappedMove = mconcat . map actionToWrappedMove
-
-type PlayResult board = MoveResult board GameResult
-
--- | A game can be played and the resulting board as 'PlayResult board' is returned
+-- | one is able to play a game
 play :: BoardC board =>
         Game board -> PlayResult board
-play (G game) = runMoveType emptyBoard $ do
-  unpackMove $ actionsToWrappedMove game
-  getGameResultM
+play (G turns)= (runInnerMoveType . play') (reverse turns)
+  where
+    play' :: BoardC board =>
+             [Turn board] -> InnerMoveType board board
+    play' = foldM applyTurn emptyBoard
+    applyTurn :: BoardC board =>
+                 board -> Turn board -> InnerMoveType board board
+    applyTurn b0 turn = let
+      currentPlayer = getCurrentPlayer' b0
+      actingPlayer  = getActingPlayer turn
+      in do
+        (lift . lift . S.modify) (\ (G g) -> G $ turn : g)
+        case currentPlayer == actingPlayer of
+          True -> do
+            (_, b1) <- S.runStateT (unpackMove (turnToMove turn)) b0
+            return b1
+          False -> let
+            error = "the player " ++ show actingPlayer ++ " is not allowed to take an action"
+            in do
+              lift . W.tell . Log . const . T.pack $ "Error: " ++ error
+              E.throwE $ T.pack error
 
 --------------------------------------------------------------------------------
 -- ** related helper
-
-extractGameResult :: PlayResult board -> GameResult
-extractGameResult ((Right (result,_),_),_) = result
-extractGameResult _                        = NoWinner
 
 extractLog :: PlayResult board -> Log
 extractLog ((_,log),_) = log
 
 extractBoard :: PlayResult board -> Maybe board
-extractBoard ((Right (_,board),_),_) = Just board
-extractBoard _                       = Nothing
+extractBoard ((Right board,_),_) = Just board
+extractBoard _                   = Nothing
+
+extractGameResult :: BoardC board =>
+                     PlayResult board -> GameResult
+extractGameResult r = case extractBoard r of
+  Just b -> getGameResult b
+  _      -> NoWinner
 
 --------------------------------------------------------------------------------
 -- * Other helper for working in the monad
@@ -305,20 +300,40 @@ logForMe textPrivate textPublic = do
                then textPrivate
                else textPublic
 
+-- | logError logs an error and throws the exception
+-- this ends the game
 logError :: BoardC s =>
             String -> MoveType s a
 logError error = do
   lift . lift . W.tell . Log . const . T.pack $ "Error: " ++ error
   lift . E.throwE $ T.pack error
 
--- ** helper for defining Actions and Moves
+-- ** helper for defining Moves and MoveType things
 
 getCurrentPlayer :: BoardC s =>
                     MoveType s UserId
 getCurrentPlayer = S.gets getCurrentPlayer'
+
+getPlayerById :: BoardC s =>
+                 UserC user => UserId -> MoveType s user
+getPlayerById uid = do
+  maybePlayer <- S.gets (getPlayerById' uid)
+  case maybePlayer of
+    Just player -> return player
+    Nothing     -> logError $ "There is no player with the playerId " ++ show uid
+
+-- ** helper for defining Actions
 
 onlyAdminIsAllowed :: BoardC board =>
                       Action board -> Action board
 onlyAdminIsAllowed (A t) = A $ \case
   Admin -> t Admin
   _     -> M $ logError "Action was not authorized"
+
+onlyCurrentPlayerIsAllowed :: BoardC board =>
+                              Action board -> Action board
+onlyCurrentPlayerIsAllowed (A t) = A $ \userId -> M $ do
+  currentPlayer <- S.gets getCurrentPlayer'
+  if (currentPlayer == userId || userId == Admin)
+    then logError $ "Player " ++ show userId ++ " is not allowed to take an action"
+    else unpackMove $ t userId

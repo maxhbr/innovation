@@ -121,6 +121,7 @@ data Card
          , _color       :: Color
          , _age         :: Age
          , _productions :: Productions
+         , _dogmaTexts  :: [String]
          , _dogmas      :: [Dogma] }
   deriving (Eq,Show)
 makeLenses ''Card
@@ -180,20 +181,22 @@ data MachineState
 
 type PlayerOrder = [UserId]
 
-data Board = Board { _machineState :: MachineState -- ^ The internal state of the underlying machine
-                   , _drawStacks   :: Map Age Stack -- ^ the draw stacks, one for every age. The topmost card is the head
-                   , _players      :: [Player] -- ^ the players playing in this game (in any order)
-                   , _playerOrder  :: PlayerOrder -- ^ the order, in which the players take actions
-                   , _history      :: Game Board
+data Board = Board { _machineState  :: MachineState -- ^ The internal state of the underlying machine
+                   , _drawStacks    :: Map Age Stack -- ^ the draw stacks, one for every age. The topmost card is the head
+                   , _dominateables :: Stack -- ^ the cards, which could be dominated
+                   , _players       :: [Player] -- ^ the players playing in this game (in any order)
+                   , _playerOrder   :: PlayerOrder -- ^ the order, in which the players take actions
                    }
              deriving (Show)
 makeLenses ''Board
 
 instance BoardC Board where
-  emptyBoard = Board Prepare Map.empty [] [] (G [])
+  emptyBoard = Board Prepare Map.empty [] [] []
 
   getCurrentPlayer'  Board{ _playerOrder=[] }    = Admin
   getCurrentPlayer'  Board{ _playerOrder=order } = head order
+
+  getPlayerById' = undefined 
 
   advancePlayerOrder = L.over playerOrder advancePlayerOrder'
     where
