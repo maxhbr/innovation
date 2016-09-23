@@ -175,11 +175,12 @@ data MachineState
 
 type PlayerOrder = [UserId]
 
-data Board = Board { _machineState :: MachineState
-                   , _drawStacks   :: Map Age Stack
-                   , _players      :: [Player]
-                   , _playerOrder  :: PlayerOrder
-                   , _history      :: Game Board }
+data Board = Board { _machineState :: MachineState -- ^ The internal state of the underlying machine
+                   , _drawStacks   :: Map Age Stack -- ^ the draw stacks, one for every age. The topmost card is the head
+                   , _players      :: [Player] -- ^ the players playing in this game (in any order)
+                   , _playerOrder  :: PlayerOrder -- ^ the order, in which the players take actions
+                   , _history      :: Game Board
+                   }
              deriving (Show)
 makeLenses ''Board
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE CPP #-}
@@ -27,6 +28,24 @@ import Game.Innovation.Types
 --------------------------------------------------------------------------------
 -- Chooseable actions
 --------------------------------------------------------------------------------
+
+-- | Draw an card and put it into an temporary stack
+data DrawAnd = forall actionToken.
+               (Read actionToken, Show actionToken, ActionToken Board actionToken) =>
+              DrawAnd actionToken
+
+instance Eq DrawAnd where
+  (DrawAnd at1) == (DrawAnd at2) = show at1 == show at2
+
+instance Read DrawAnd where -- TODO
+
+instance Show DrawAnd where
+  show (DrawAnd at) = "DrawAnd " ++ show at
+
+instance ActionToken Board DrawAnd where
+  getAction (DrawAnd actionToken) = A $ \userId ->
+    undefined
+
 -- | Draw
 data Draw = Draw
           deriving (Eq, Read, Show)
