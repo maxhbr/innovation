@@ -111,7 +111,7 @@ instance ActionToken Board StartGame where
             -- play chosen cards
             -- determine starting player
             ps <- use players
-            playerOrder .= map getId ps -- FALSE!
+            playerOrder .= map getUId ps -- FALSE!
             machineState .= WaitForTurn
        ))
 

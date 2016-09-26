@@ -75,7 +75,7 @@ spec =
       let stateM = extractBoard playResult
       isJust stateM `shouldBe` True
       let state = fromJust stateM
-      map getId (view players state) `shouldBe` [U "user2", U "user1"]
+      map getUId (view players state) `shouldBe` [U "user2", U "user1"]
       view machineState state `shouldBe` Prepare
     it "just init + addPlayers + StartGame" $ do
       let game = G $ reverse [ Admin `does` Init
@@ -95,7 +95,8 @@ spec =
                              , Admin `does` AddPlayer "user1"
                              , Admin `does` AddPlayer "user2"
                              , Admin `does` StartGame seed
-                             , U "user2" `does` Draw]
+                             , U "user2" `does` Draw
+                             , U "user1" `does` Draw]
       let playResult = play game
       printLog playResult
       extractGameResult playResult `shouldBe` NoWinner
@@ -104,6 +105,7 @@ spec =
       let state = fromJust stateM
       length (view players state) `shouldBe` 2
       view machineState state `shouldNotBe` Prepare
+      exactlyAllCardsArePresent state `shouldBe` True
 
 main :: IO ()
 main = hspec spec

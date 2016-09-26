@@ -33,6 +33,14 @@ data Skip = Skip
 instance ActionToken Board Skip where
   getAction Skip = A $ const $ M $ log "... skip"
 
+modifyPlayer :: UserId -> (Player -> Player) -> MoveType Board ()
+modifyPlayer userId f = do
+  playerToModify <- getPlayerById userId
+  let modifiedPlayer = f playerToModify
+  -- unless (getId playerToModify == getId modifiedPlayer) $
+  --   logError "id of player should not change while modifying it"
+  S.modify $ \b -> b {_players = modifiedPlayer : (filter (\p -> not $ p `hasUId` userId) (_players b))}
+
 -- | Try to draw an card of an specific age
 drawAnAnd :: Age -> ActionWR Board Card
 drawAnAnd inputAge = A $ \userId -> M $ do
@@ -40,8 +48,8 @@ drawAnAnd inputAge = A $ \userId -> M $ do
   case drawAge of
     Just age -> do
       card <- S.gets (head . fromJust . (Map.lookup age) . _drawStacks)
-      logForMe ("draw the card [" ++ show card ++ "]") ("draw a card of age " ++ show age)
-      -- TODO: remove the card from stack
+      logForMe ("draw the card " ++ pp card) ("draw a card of age " ++ pp age)
+      logTODO "remove the card from stack"
       return card
     _        -> logTODO "endgame..."
 
@@ -61,8 +69,9 @@ drawNAnd n = A $ \userId ->
 putIntoHand :: Card -> Action Board
 putIntoHand card = A $ \userId -> M $ do
   actingPlayer <- getPlayerById userId
-  let actingPlayer = actingPlayer {_hand = card : (_hand actingPlayer)}
-  logTODO "putIntoHand ..."
+  -- let actingPlayer = actingPlayer {_hand = card : (_hand actingPlayer)}
+  -- writePlayer $ actingPlayer
+  S.modify id
 
 -- --------------------------------------------------------------------------------
 -- -- | Draw an card and put it into an temporary stack
@@ -85,27 +94,19 @@ putIntoHand card = A $ \userId -> M $ do
 --     undefined userId
 
 --------------------------------------------------------------------------------
--- | take all cards of the intermediate stack and put them into the hand
-data PutIntoHand = PutIntoHand
-                 deriving (Eq, Read, Show)
-instance ActionToken Board PutIntoHand where
-  getAction PutIntoHand = A $ \userId -> M $ do
-    logTODO "putIntoHand"
+-- -- | take all cards of the intermediate stack and put them into the hand
+-- data PutIntoHand = PutIntoHand
+--                  deriving (Eq, Read, Show)
+-- instance ActionToken Board PutIntoHand where
+--   getAction PutIntoHand = A $ \userId -> M $ do
+--     logTODO "putIntoHand"
 
 --------------------------------------------------------------------------------
 -- | Draw
 data Draw = Draw
           deriving (Eq, Read, Show)
 instance ActionToken Board Draw where
-  getAction Draw = A $ \userId -> M $ do
-    unpackMove $ (unpackAction $ drawAnd >>= putIntoHand) userId
--- instance UserActionC State Draw where
---   getTransition' _ state | isNothing currentPlayer = fail "not able to Draw"
---                          | otherwise               = W.writer (Right undefined, logs)
---     where
---       currentPlayer  = getPlayerByUserId (getCurrentUser state) state
---       currentDrawAge = getCurrentDrawAge (fromJust currentPlayer) state
---       logs           = undefined
+  getAction Draw = drawAnd >>= putIntoHand
 
 --------------------------------------------------------------------------------
 -- | Play

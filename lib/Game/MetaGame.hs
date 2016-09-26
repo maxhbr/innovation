@@ -4,14 +4,14 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE CPP #-}
 module Game.MetaGame
-       ( IDAble (..)
-       , UserId (..), UserC (..), isAdmin
+       ( PrettyPrint (..)
+       , UserId (..), mkUserId, UserC (..), isAdmin
        , BoardC (..), GameResult (..)
        , Log (..), viewLog
        , MoveType, MoveWR (..), Move (..)
-       , ActionToken (..), ActionWR (..), Action (..)
+       , ActionWR (..), Action (..)
+       , ActionToken (..), unpackToken
        , Turn (..), does'
        , Game (..)
        , turnToMove, turnsToMove
@@ -43,29 +43,44 @@ import qualified Control.Lens as L
 -- * Basic data and type declerations
 --------------------------------------------------------------------------------
 
-class (Eq id, Show id, Read id) =>
-      IDAble id a where
-  getId :: a -> id
-  hasId :: a -> id -> Bool
-  hasId a id = getId a == id
--- instance Eq (IDAble id a) where
---   a1 == a2 = hasId a1 $ getId a2
+-- | PrettyPrint is for printing things for user output or for rougth debugging
+
+class PrettyPrint a where
+  pp :: a -> String
+  putpp :: a -> IO ()
+  putpp = putStrLn . pp
 
 --------------------------------------------------------------------------------
 -- ** Users and user-related stuff
 
-isValidUserId :: String -> Bool
-isValidUserId id = True -- TODO
+-- | should remove:
+--   - newlines,
+--   - whitespace at all,
+-- and keep
+--   - only alphanumeric + - _ , ...
+sanitizeUserId :: String -> String
+sanitizeUserId = id -- TODO
 
 data UserId = U String
             | Admin
             deriving (Show,Eq,Read)
+mkUserId :: String -> UserId
+mkUserId = U . sanitizeUserId
+
+instance PrettyPrint UserId where
+  pp Admin   = "Admin"
+  pp (U uid) = uid
 
 isAdmin :: UserId -> Bool
 isAdmin Admin = True
 isAdmin _     = False
 
-type UserC user = IDAble UserId user
+class UserC user where
+  getUId :: user -> UserId
+  hasUId :: user -> UserId -> Bool
+  hasUId user uid = getUId user == uid
+  hasEqualUId :: user -> user -> Bool
+  hasEqualUId user1 user2 = user1 `hasUId` getUId user2
 
 --------------------------------------------------------------------------------
 -- ** State
@@ -84,9 +99,20 @@ class BoardC board where
   -- | the current player is done with its action
   advancePlayerOrder :: board -> board
 
+  -- | atomic update
+  -- this should check for winning conditions and do all other checks, which
+  -- depend on the current state and could happen in mid turn
+  doAtomicUpdate :: board -> board
+
   -- | unpack the currently known result from the board
   -- If there is a winner, the board should know about it
   getGameResult :: board -> GameResult
+
+hasWinner :: BoardC board =>
+             board -> Bool
+hasWinner board = case getGameResult board of
+  NoWinner -> False
+  Winner _ -> True
 
 --------------------------------------------------------------------------------
 -- ** Log
@@ -94,13 +120,16 @@ class BoardC board where
 -- | A user dependent Log
 newtype Log = Log (UserId -> Text)
 
+clog :: String -> Log
+clog = Log . const . T.pack
+
 -- | helper function to get the log from the view of an user
 viewLog :: UserId -> Log -> Text
 viewLog userId (Log log) = log userId
 
 -- | we can combine logs to in an monoidal way
 instance Monoid Log where
-  mempty                    = Log $ const (T.pack "")
+  mempty                    = clog ""
   mappend (Log l1) (Log l2) = Log $ \userId -> let
     lo1 = l1 userId
     lo2 = l2 userId
@@ -166,8 +195,6 @@ instance BoardC board =>
   fmap f move = do
         result <- move
         return (f result)
-  -- law1: fmap id over a functor, it should be the same as just calling id
-  -- law2: fmap (f . g) = fmap f . fmap g
 
 instance BoardC board =>
          Applicative (MoveWR board) where
@@ -176,15 +203,11 @@ instance BoardC board =>
     r <- getF
     x <- getX
     return $ r x
-  -- law: pure f <*> x `equals` fmap f x
 
 instance BoardC board =>
          Monad (MoveWR board) where
   return t    = M $ return t
   (M t) >>= f = M $ t >>= (unpackMove . f)
-  -- law1: return x >>= f is the same damn thing as f x
-  -- law2: m >>= return is no different than just m
-  -- law3: Doing (m >>= f) >>= g is just like doing m >>= (\x -> f x >>= g)
 
 --------------------------------------------------------------------------------
 -- ** Actions
@@ -203,8 +226,6 @@ instance BoardC board =>
   fmap f action = do
         result <- action
         return (f result)
-  -- law1: fmap id over a functor, it should be the same as just calling id
-  -- law2: fmap (f . g) = fmap f . fmap g
 
 instance BoardC board =>
          Applicative (ActionWR board) where
@@ -213,15 +234,11 @@ instance BoardC board =>
     f <- getF userId
     x <- getX userId
     return $ f x
-  -- law: pure f <*> x `equals` fmap f x
 
 instance BoardC board =>
          Monad (ActionWR board) where
   return t    = A $ const $ return t
   (A t) >>= f = A $ \userId -> (t userId) >>= ((\f -> f userId) . unpackAction . f)
-  -- law1: return x >>= f is the same damn thing as f x
-  -- law2: m >>= return is no different than just m
-  -- law3: Doing (m >>= f) >>= g is just like doing m >>= (\x -> f x >>= g)
 
 --------------------------------------------------------------------------------
 -- ** ActionTokens
@@ -233,6 +250,10 @@ instance BoardC board =>
 class (BoardC board, Eq actionToken, Read actionToken, Show actionToken) =>
       ActionToken board actionToken where
   getAction :: actionToken -> Action board
+
+unpackToken :: ActionToken board actionToken =>
+               actionToken -> UserId -> MoveWR board ()
+unpackToken = unpackAction . getAction
 
 --------------------------------------------------------------------------------
 -- ** Turns
@@ -262,14 +283,14 @@ instance Eq (Turn board) where
 -- *** related helper
 -- | redeem the described Move from an turn
 turnToMove :: Turn board -> Move board
-turnToMove (Turn userId actionToken) = (unpackAction $ getAction actionToken) userId
+turnToMove (Turn userId actionToken) = unpackToken actionToken userId
 
 turnsToMove :: BoardC board =>
                [Turn board] -> Move board
 turnsToMove = mconcat . map turnToMove
 
 -- | run a turn on a board
--- this also advances the player order, i.e. consumes an 'action' 
+-- this also advances the player order, i.e. consumes an 'action'
 runTurn :: BoardC board =>
            Turn board -> board -> InnerMoveType board board
 runTurn turn b0 = do
@@ -298,20 +319,23 @@ play (G turns)= (runInnerMoveType . play') (reverse turns)
     play' :: BoardC board =>
              [Turn board] -> InnerMoveType board board
     play' = foldM applyTurn emptyBoard
+
+    logError' :: String -> InnerMoveType s a
+    logError' error = do
+      lift . W.tell $ clog error
+      E.throwE $ T.pack error
+
     applyTurn :: BoardC board =>
                  board -> Turn board -> InnerMoveType board board
-    applyTurn b0 turn = let
-      currentPlayer = getCurrentPlayer' b0
-      actingPlayer  = getActingPlayer turn
-      in do
-        (lift . lift . S.modify) (\ (G g) -> G $ turn : g)
-        case currentPlayer == actingPlayer of
-          True -> runTurn turn b0
-          False -> let
-            error = "the player " ++ show actingPlayer ++ " is not allowed to take an action"
-            in do
-              lift . W.tell . Log . const . T.pack $ "Error: " ++ error
-              E.throwE $ T.pack error
+    applyTurn b0 turn = do
+      when (hasWinner b0) $
+        logError' $ "game already over"
+      let currentPlayer = getCurrentPlayer' b0
+      let actingPlayer  = getActingPlayer turn
+      (lift . lift . S.modify) (\ (G g) -> G $ turn : g)
+      case currentPlayer == actingPlayer of
+        True -> runTurn turn b0
+        False -> logError' $ "the player " ++ pp actingPlayer ++ " is not allowed to take an action"
 
 --------------------------------------------------------------------------------
 -- ** related helper
@@ -339,10 +363,8 @@ log :: BoardC s =>
 log text = do
     loggingUser <- getCurrentPlayer
     lift . lift . W.tell .
-      Log .
-      const .
-      T.pack $
-      show loggingUser ++ ": " ++ text
+      clog $
+      pp loggingUser ++ ": " ++ text
 
 logForMe :: BoardC s =>
             String -> String -> MoveType s ()
@@ -350,7 +372,7 @@ logForMe textPrivate textPublic = do
     loggingUser <- getCurrentPlayer
     lift . lift . W.tell . Log $
       \user -> T.pack $
-               ((show loggingUser ++ ": ") ++) $
+               ((pp loggingUser ++ ": ") ++) $
                if user == loggingUser || user == Admin
                then textPrivate
                else textPublic
@@ -360,7 +382,7 @@ logForMe textPrivate textPublic = do
 logError :: BoardC s =>
             String -> MoveType s a
 logError error = do
-  lift . lift . W.tell . Log . const . T.pack $ "Error: " ++ error
+  lift . lift . W.tell . clog $ "Error: " ++ error
   lift . E.throwE $ T.pack error
 
 -- | logError logs an error and throws the exception
@@ -368,7 +390,7 @@ logError error = do
 logTODO :: BoardC s =>
            String -> MoveType s a
 logTODO todo = do
-  lift . lift . W.tell . Log . const . T.pack $ "TODO: " ++ todo
+  lift . lift . W.tell . clog $ "TODO: " ++ todo
   lift . E.throwE $ T.pack $ "TODO: " ++ todo
 
 -- ** helper for defining Moves and MoveType things
@@ -376,14 +398,6 @@ logTODO todo = do
 getCurrentPlayer :: BoardC s =>
                     MoveType s UserId
 getCurrentPlayer = S.gets getCurrentPlayer'
-
--- getPlayerById :: BoardC s =>
---                  UserC user => UserId -> MoveType s user
--- getPlayerById uid = do
---   maybePlayer <- S.gets (getPlayerById' uid)
---   case maybePlayer of
---     Just player -> return player
---     Nothing     -> logError $ "There is no player with the playerId " ++ show uid
 
 -- ** helper for defining Actions
 

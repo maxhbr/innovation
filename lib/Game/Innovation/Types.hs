@@ -26,11 +26,6 @@ import qualified Control.Monad.Trans.State.Lazy as S
 
 import           Game.MetaGame
 
-class PrettyPrint a where
-  pp' :: a -> String
-  pp :: a -> IO ()
-  pp = putStrLn . pp'
-
 --------------------------------------------------------------------------------
 -- Basic types
 --------------------------------------------------------------------------------
@@ -38,7 +33,7 @@ class PrettyPrint a where
 data Color = Blue | Purple | Red | Yellow | Green
   deriving (Eq,Show,Read,Enum,Ord,Bounded)
 instance PrettyPrint Color where
-  pp' = show
+  pp = show
 
 colors :: [Color]
 colors = [minBound ..]
@@ -46,7 +41,7 @@ colors = [minBound ..]
 data Age = Age1 | Age2 | Age3 | Age4 | Age5 | Age6 | Age7 | Age8 | Age9 | Age10
   deriving (Eq,Show,Read,Enum,Ord,Bounded)
 instance PrettyPrint Age where
-  pp' = show
+  pp = show
 
 ages :: [Age]
 ages = [minBound ..]
@@ -54,7 +49,7 @@ ages = [minBound ..]
 data Symbol = Castle | Tree | Crown | Bulb | Factory | Clock
   deriving (Eq,Show,Read,Enum,Ord,Bounded)
 instance PrettyPrint Symbol where
-  pp' = show
+  pp = show
 
 symbols :: [Symbol]
 symbols = [minBound ..]
@@ -137,12 +132,12 @@ makeLenses ''Card
 
 data CardId = CardId { unpackCardId :: String }
             deriving (Eq, Show, Read)
-
-instance IDAble CardId Card where
-  getId Card{ _title=t, _age=a } = CardId $ "[" ++ show a ++ ": " ++ t ++ "]"
+getCId :: Card -> CardId
+getCId Card{ _title=t, _age=a } = CardId $ "[" ++ show a ++ ": " ++ t ++ "]"
 
 instance PrettyPrint Card where
-  pp' = unpackCardId . getId
+  pp = unpackCardId . getCId
+
 --------------------------------------------------------------------------------
 -- Players
 --------------------------------------------------------------------------------
@@ -170,8 +165,8 @@ makeLenses ''Player
 instance Eq Player where
   p1 == p2 = _playerId p1 == _playerId p2
 
-instance IDAble UserId Player where -- UserC Player where
-  getId = _playerId
+instance UserC Player where
+  getUId = _playerId
 
 --------------------------------------------------------------------------------
 -- Game state
@@ -212,6 +207,11 @@ instance BoardC Board where
       advancePlayerOrder' [p]                      = [p]
       advancePlayerOrder' (p1:(p2:ps)) | p1 == p2  = p2:ps
                                        | otherwise = p2:ps ++ [p1,p1]
+
+  doAtomicUpdate = determineWinner . doSpecialAchievments
+    where
+      doSpecialAchievments = id -- TODO
+      determineWinner = id -- TODO
 
   getGameResult board = let
     ms = _machineState board

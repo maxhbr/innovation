@@ -31,7 +31,7 @@ getStackFromMapBy = Map.findWithDefault emptyStack
 getPlayerById :: UserId -> MoveType Board Player
 getPlayerById uid = do
   players <- S.gets _players
-  let playersWithId = filter (\p -> getId p == uid) players
+  let playersWithId = filter (\p -> getUId p == uid) players
   case playersWithId of
     [p] -> return p
     []  -> logError "player not found"
