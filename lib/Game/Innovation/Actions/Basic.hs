@@ -9,6 +9,7 @@ module Game.Innovation.Actions.Basic
        , Activate (..)
        ) where
 
+import           Prelude hiding (log)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe
@@ -24,57 +25,80 @@ import           Data.Proxy
 import           Control.Lens
 
 import           Game.MetaGame
+import           Game.Innovation.Rules
 import           Game.Innovation.Types
 
---------------------------------------------------------------------------------
--- Chooseable actions
---------------------------------------------------------------------------------
+data Skip = Skip
+          deriving (Eq, Show, Read)
+instance ActionToken Board Skip where
+  getAction Skip = A $ const $ M $ log "... skip"
 
-drawAnd :: ActionWR Board CardId
-drawAnd = A $ \userId ->
-  undefined
+-- | Try to draw an card of an specific age
+drawAnAnd :: Age -> ActionWR Board Card
+drawAnAnd inputAge = A $ \userId -> M $ do
+  drawAge <- getDrawAge inputAge
+  case drawAge of
+    Just age -> do
+      card <- S.gets (head . fromJust . (Map.lookup age) . _drawStacks)
+      logForMe ("draw the card [" ++ show card ++ "]") ("draw a card of age " ++ show age)
+      -- TODO: remove the card from stack
+      return card
+    _        -> logTODO "endgame..."
 
-drawNAnd :: Int -> ActionWR Board [CardId]
+-- | Try to draw an card of current age
+drawAnd :: ActionWR Board Card
+drawAnd = A $ \userId -> M $ do
+  actingPlayer <- getPlayerById userId
+  let playersAge = getPlayersAge actingPlayer
+  unpackMove $ (unpackAction $ drawAnAnd playersAge) userId
+
+drawNAnd :: Int -> ActionWR Board [Card]
 drawNAnd n = A $ \userId ->
   M (replicateM n
      (unpackMove
       (unpackAction drawAnd userId)))
 
---------------------------------------------------------------------------------
--- | Draw an card and put it into an temporary stack
-data DrawAnd = forall actionToken.
-               (Read actionToken, Show actionToken, ActionToken Board actionToken) =>
-               DrawAnd actionToken
+putIntoHand :: Card -> Action Board
+putIntoHand card = A $ \userId -> M $ do
+  actingPlayer <- getPlayerById userId
+  let actingPlayer = actingPlayer {_hand = card : (_hand actingPlayer)}
+  logTODO "putIntoHand ..."
 
-instance Eq DrawAnd where
-  (DrawAnd at1) == (DrawAnd at2) = show at1 == show at2
+-- --------------------------------------------------------------------------------
+-- -- | Draw an card and put it into an temporary stack
+-- data DrawAnd = forall actionToken.
+--                (Read actionToken, Show actionToken, ActionToken Board actionToken) =>
+--                DrawAnd actionToken
 
-instance Read DrawAnd where -- TODO
+-- instance Eq DrawAnd where
+--   (DrawAnd at1) == (DrawAnd at2) = show at1 == show at2
 
-instance Show DrawAnd where
-  show (DrawAnd at) = "DrawAnd " ++ show at
+-- instance Read DrawAnd where -- TODO
 
-instance ActionToken Board DrawAnd where
-  getAction (DrawAnd actionToken) = A $ \userId ->
-    -- Draw
-    -- use actionToken on drawnCard
-    undefined
+-- instance Show DrawAnd where
+--   show (DrawAnd at) = "DrawAnd " ++ show at
+
+-- instance ActionToken Board DrawAnd where
+--   getAction (DrawAnd actionToken) = A $ \userId ->
+--     -- Draw
+--     -- use actionToken on drawnCard
+--     undefined userId
 
 --------------------------------------------------------------------------------
 -- | take all cards of the intermediate stack and put them into the hand
 data PutIntoHand = PutIntoHand
                  deriving (Eq, Read, Show)
 instance ActionToken Board PutIntoHand where
-  getAction PutIntoHand = A $ \userId ->
-    undefined
-
+  getAction PutIntoHand = A $ \userId -> M $ do
+    logTODO "putIntoHand"
 
 --------------------------------------------------------------------------------
 -- | Draw
 data Draw = Draw
           deriving (Eq, Read, Show)
 instance ActionToken Board Draw where
-  getAction Draw = getAction (DrawAnd PutIntoHand)
+  getAction Draw = A $ \userId -> M $ do
+    unpackMove $ (unpackAction $ drawAnd >>= putIntoHand) userId
 -- instance UserActionC State Draw where
 --   getTransition' _ state | isNothing currentPlayer = fail "not able to Draw"
 --                          | otherwise               = W.writer (Right undefined, logs)

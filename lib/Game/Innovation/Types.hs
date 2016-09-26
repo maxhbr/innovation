@@ -14,6 +14,15 @@ import           System.Random
 import           System.Random.Shuffle (shuffle')
 import           Control.Lens (makeLenses, Lens, Lens')
 import qualified Control.Lens as L
+import           Data.Monoid
+import           Control.Monad.Trans.Identity
+import           Control.Monad.Trans.Class
+import           Control.Monad.Trans.Writer (WriterT)
+import qualified Control.Monad.Trans.Writer as W
+import           Control.Monad.Trans.Except (ExceptT)
+import qualified Control.Monad.Trans.Except as E
+import           Control.Monad.Trans.State.Lazy (StateT)
+import qualified Control.Monad.Trans.State.Lazy as S
 
 import           Game.MetaGame
 
@@ -195,8 +204,6 @@ instance BoardC Board where
 
   getCurrentPlayer'  Board{ _playerOrder=[] }    = Admin
   getCurrentPlayer'  Board{ _playerOrder=order } = head order
-
-  getPlayerById' = undefined 
 
   advancePlayerOrder = L.over playerOrder advancePlayerOrder'
     where

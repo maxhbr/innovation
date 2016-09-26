@@ -90,6 +90,20 @@ spec =
       let state = fromJust stateM
       length (view players state) `shouldBe` 2
       view machineState state `shouldNotBe` Prepare
+    it "just init + addPlayers + StartGame + draw" $ do
+      let game = G $ reverse [ Admin `does` Init
+                             , Admin `does` AddPlayer "user1"
+                             , Admin `does` AddPlayer "user2"
+                             , Admin `does` StartGame seed
+                             , U "user2" `does` Draw]
+      let playResult = play game
+      printLog playResult
+      extractGameResult playResult `shouldBe` NoWinner
+      let stateM = extractBoard playResult
+      isJust stateM `shouldBe` True
+      let state = fromJust stateM
+      length (view players state) `shouldBe` 2
+      view machineState state `shouldNotBe` Prepare
 
 main :: IO ()
 main = hspec spec

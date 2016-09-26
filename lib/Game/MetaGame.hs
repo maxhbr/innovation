@@ -17,7 +17,7 @@ module Game.MetaGame
        , turnToMove, turnsToMove
        , play, extractGameResult, extractLog, extractBoard
        , getCurrentPlayer
-       , log, logForMe, logError
+       , log, logForMe, logError, logTODO
        , onlyAdminIsAllowed
        ) where
 
@@ -81,9 +81,6 @@ class BoardC board where
   -- if another user is acting, the game fails
   getCurrentPlayer' :: board -> UserId
 
-  -- | get the player data by his 'UserId'
-  getPlayerById' :: UserC user => UserId -> board -> Maybe user
-
   -- | the current player is done with its action
   advancePlayerOrder :: board -> board
 
@@ -137,8 +134,7 @@ runInnerMoveType imt = (S.runState .
 
 -- | The type of an move
 type MoveType board = StateT board -- ^ uses StateT to handle the state of the board as 'board'
-                      ( InnerMoveType board
-                      )
+                      ( InnerMoveType board )
 
 -- | the result of a move is the resulting state together with a bunch of metadata
 type MoveResult board r = ( ( Either Text -- ^ this maybe contains the error text
@@ -162,8 +158,33 @@ type Move board = MoveWR board ()
 
 instance BoardC board =>
          Monoid (Move board) where
-  mempty                = M $ S.modify id -- TODO: make easyier
+  mempty                = M $ S.modify id -- TODO
   mappend (M t1) (M t2) = M $ t1 >> t2
+
+instance BoardC board =>
+         Functor (MoveWR board) where
+  fmap f move = do
+        result <- move
+        return (f result)
+  -- law1: fmap id over a functor, it should be the same as just calling id
+  -- law2: fmap (f . g) = fmap f . fmap g
+
+instance BoardC board =>
+         Applicative (MoveWR board) where
+  pure r      = M $ return r
+  (M getF) <*> (M getX) = M $ do
+    r <- getF
+    x <- getX
+    return $ r x
+  -- law: pure f <*> x `equals` fmap f x
+
+instance BoardC board =>
+         Monad (MoveWR board) where
+  return t    = M $ return t
+  (M t) >>= f = M $ t >>= (unpackMove . f)
+  -- law1: return x >>= f is the same damn thing as f x
+  -- law2: m >>= return is no different than just m
+  -- law3: Doing (m >>= f) >>= g is just like doing m >>= (\x -> f x >>= g)
 
 --------------------------------------------------------------------------------
 -- ** Actions
@@ -176,6 +197,31 @@ instance BoardC board =>
          Monoid (Action board) where
   mempty                = A $ const mempty
   mappend (A a1) (A a2) = A $ \uid -> a1 uid <> a2 uid
+
+instance BoardC board =>
+         Functor (ActionWR board) where
+  fmap f action = do
+        result <- action
+        return (f result)
+  -- law1: fmap id over a functor, it should be the same as just calling id
+  -- law2: fmap (f . g) = fmap f . fmap g
+
+instance BoardC board =>
+         Applicative (ActionWR board) where
+  pure r = A $ const $ return r
+  (A getF) <*> (A getX) = A $ \userId -> do
+    f <- getF userId
+    x <- getX userId
+    return $ f x
+  -- law: pure f <*> x `equals` fmap f x
+
+instance BoardC board =>
+         Monad (ActionWR board) where
+  return t    = A $ const $ return t
+  (A t) >>= f = A $ \userId -> (t userId) >>= ((\f -> f userId) . unpackAction . f)
+  -- law1: return x >>= f is the same damn thing as f x
+  -- law2: m >>= return is no different than just m
+  -- law3: Doing (m >>= f) >>= g is just like doing m >>= (\x -> f x >>= g)
 
 --------------------------------------------------------------------------------
 -- ** ActionTokens
@@ -197,6 +243,8 @@ data Turn board = forall actionToken.
                   ActionToken board actionToken =>
                   Turn { getActingPlayer :: UserId
                        , getActionToken :: actionToken }
+                -- | Choice { getChoosingPlayer :: UserId
+                --          , getChoice :: undefined}
 
 does' :: ActionToken board actionToken =>
          Proxy board -> UserId -> actionToken -> Turn board
@@ -208,7 +256,8 @@ instance Show (Turn board) where
 
 -- | The `Eq` instance of `Action board` is deriven from the `Show` instance
 instance Eq (Turn board) where
-  act1 == act2 = show act1 == show act2
+  turn1 == turn2 = getActingPlayer turn1 == getActingPlayer turn2
+                   && show turn1 == show turn2
 
 -- *** related helper
 -- | redeem the described Move from an turn
@@ -218,6 +267,14 @@ turnToMove (Turn userId actionToken) = (unpackAction $ getAction actionToken) us
 turnsToMove :: BoardC board =>
                [Turn board] -> Move board
 turnsToMove = mconcat . map turnToMove
+
+-- | run a turn on a board
+-- this also advances the player order, i.e. consumes an 'action' 
+runTurn :: BoardC board =>
+           Turn board -> board -> InnerMoveType board board
+runTurn turn b0 = do
+  (_, b1) <- S.runStateT (unpackMove (turnToMove turn)) b0
+  return $ advancePlayerOrder b1
 
 --------------------------------------------------------------------------------
 -- ** Game
@@ -249,9 +306,7 @@ play (G turns)= (runInnerMoveType . play') (reverse turns)
       in do
         (lift . lift . S.modify) (\ (G g) -> G $ turn : g)
         case currentPlayer == actingPlayer of
-          True -> do
-            (_, b1) <- S.runStateT (unpackMove (turnToMove turn)) b0
-            return b1
+          True -> runTurn turn b0
           False -> let
             error = "the player " ++ show actingPlayer ++ " is not allowed to take an action"
             in do
@@ -308,19 +363,27 @@ logError error = do
   lift . lift . W.tell . Log . const . T.pack $ "Error: " ++ error
   lift . E.throwE $ T.pack error
 
+-- | logError logs an error and throws the exception
+-- this ends the game
+logTODO :: BoardC s =>
+           String -> MoveType s a
+logTODO todo = do
+  lift . lift . W.tell . Log . const . T.pack $ "TODO: " ++ todo
+  lift . E.throwE $ T.pack $ "TODO: " ++ todo
+
 -- ** helper for defining Moves and MoveType things
 
 getCurrentPlayer :: BoardC s =>
                     MoveType s UserId
 getCurrentPlayer = S.gets getCurrentPlayer'
 
-getPlayerById :: BoardC s =>
-                 UserC user => UserId -> MoveType s user
-getPlayerById uid = do
-  maybePlayer <- S.gets (getPlayerById' uid)
-  case maybePlayer of
-    Just player -> return player
-    Nothing     -> logError $ "There is no player with the playerId " ++ show uid
+-- getPlayerById :: BoardC s =>
+--                  UserC user => UserId -> MoveType s user
+-- getPlayerById uid = do
+--   maybePlayer <- S.gets (getPlayerById' uid)
+--   case maybePlayer of
+--     Just player -> return player
+--     Nothing     -> logError $ "There is no player with the playerId " ++ show uid
 
 -- ** helper for defining Actions
 
