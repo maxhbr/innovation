@@ -12,8 +12,8 @@ import Game.Innovation.Cards
 getAllCardsFromMap :: Map a Stack -> Stack
 getAllCardsFromMap = Map.foldr (++) []
 
-getAllCurrentCards :: State -> Stack
-getAllCurrentCards (State drawStacks players _ _) = cardsInDrawStacks ++ cardsAtPlayers
+getAllCurrentCards :: Board -> Stack
+getAllCurrentCards (Board _ drawStacks dominateables players _) = cardsInDrawStacks ++ dominateables ++ cardsAtPlayers
   where
     cardsInDrawStacks = getAllCardsFromMap drawStacks
     cardsAtPlayers    = concatMap getAllCardsOfPlayer players
@@ -21,9 +21,9 @@ getAllCurrentCards (State drawStacks players _ _) = cardsInDrawStacks ++ cardsAt
     getAllCardsOfPlayer (Player _ stacks _ influence dominations hand) = undefined
 
 getAllStartingCards :: Stack
-getAllStartingCards = getAllCardsFromMap cards
+getAllStartingCards = getAllCardsFromMap getDeck
 
-exactlyAllCardsArePresent :: State -> Bool
+exactlyAllCardsArePresent :: Board -> Bool
 exactlyAllCardsArePresent state = undefined
   where
     noCardsAreDuplicates = undefined

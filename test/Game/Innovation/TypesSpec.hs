@@ -10,7 +10,7 @@ spec :: Spec
 spec = do
   describe "User" $ do
     it "getUserId . mkPlayer = id" $
-       property $ \id -> (getUserId . mkPlayer) id == (U (id :: String))
+       property $ \id -> (getUId . mkPlayer) id == (U (id :: String))
 
 main :: IO ()
 main = hspec spec
