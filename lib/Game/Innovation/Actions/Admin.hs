@@ -3,7 +3,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Game.Innovation.Actions.Admin
     ( Init (..)
-    , SetCardDeck (..)
     , Shuffle (..)
     , DrawDominations (..)
     , AddPlayer (..)
@@ -38,29 +37,15 @@ import           Game.Innovation.Rules
 doesInSequence = undefined
 
 -- | Init
--- Does:
---  - SetCardDeck
---  - Shuffle
---  - DrawDominations
-data Init = Init DeckName
+data Init = Init
           deriving (Eq, Show, Read)
 instance ActionToken Board Init where
-  getAction (Init deckName) = onlyAdminIsAllowed $
-                              A $ \userId ->
-    turnsToMove [ userId `does` SetCardDeck deckName
-                , userId `does` DrawDominations ]
-
--- | SetCardDeck
-data SetCardDeck = SetCardDeck DeckName
-                 deriving (Eq, Show, Read)
-instance ActionToken Board SetCardDeck where
-  getAction (SetCardDeck deckName) = onlyAdminIsAllowed $
-                                   A $ \userId ->
+  getAction Init = onlyAdminIsAllowed $
+                   A $ \userId ->
     M ( do
-           log $ "Use the \"" ++ deckName ++ "\" card deck"
-           S.modify (\board -> board{ _drawStacks=getDeck deckName })
+           log "Init the board"
+           S.modify (\board -> board{ _drawStacks=getDeck })
       )
-
 
 -- | Shuffle
 -- create an empty game using a given seed
@@ -111,6 +96,7 @@ instance ActionToken Board StartGame where
   getAction (StartGame seed) = onlyAdminIsAllowed $
                                A $ \userId ->
     (turnToMove $ userId `does` Shuffle seed) <>
+    (turnToMove $ userId `does` DrawDominations) <>
     (M ( do
             log "Start game"
             ps <- use players

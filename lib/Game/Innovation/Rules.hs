@@ -28,31 +28,40 @@ import           Game.Innovation.Cards
 getStackFromMapBy :: (Ord k) => k -> Map k Stack -> Stack
 getStackFromMapBy = Map.findWithDefault emptyStack
 
-getPlayerByUserId :: Maybe UserId -> Board -> Maybe Player
-getPlayerByUserId Nothing _           = Nothing
-getPlayerByUserId (Just userId) state = undefined
+getPlayerById :: UserId -> MoveType Board Player
+getPlayerById uid = do
+  players <- S.gets _players
+  let playersWithId = filter (\p -> getId p == uid) players
+  case playersWithId of
+    [p] -> return p
+    []  -> logError "player not found"
+    _   -> logError "multiple players found, with the same id"
 
 --------------------------------------------------------------------------------
 -- Getter for ages
 --------------------------------------------------------------------------------
 
-getCurrentAge :: Player -> Age
-getCurrentAge player = let
+getPlayersAge :: Player -> Age
+getPlayersAge player = let
   currentAges = (map (fromEnum . view age . head) . filter (not . null) . Map.elems) $ _stacks player
   in if currentAges /= []
      then toEnum $ maximum currentAges
      else Age1
 
-getCurrentDrawAge :: Player -> Board -> Maybe Age
-getCurrentDrawAge player state = if null agesAboveWithCards
-                                 then Nothing
-                                 else Just $ head agesAboveWithCards
-  where
-    currentAge         = getCurrentAge player
-    currentDrawStacks  = view drawStacks state
-    agesAboveWithCards = Map.keys $
-                         Map.filterWithKey (\ age stack -> age >= currentAge
-                                                        && stack /= []) currentDrawStacks
+getDrawAge :: Age -> MoveType Board (Maybe Age)
+getDrawAge inputAge = do
+  currentDrawStacks <- S.gets _drawStacks
+  let agesAboveWithCards = Map.keys $
+                           Map.filterWithKey (\ age stack -> age >= inputAge
+                                                             && stack /= []) currentDrawStacks
+  return $ if null agesAboveWithCards
+           then Nothing
+           else Just $ head agesAboveWithCards
+
+getPlayersDrawAge :: Player -> MoveType Board (Maybe Age)
+getPlayersDrawAge player = do
+  let playersAge = getPlayersAge player
+  getDrawAge playersAge
 
 --------------------------------------------------------------------------------
 -- Getter for visible productions and related symbols

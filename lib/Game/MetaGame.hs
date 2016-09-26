@@ -4,19 +4,20 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE CPP #-}
 module Game.MetaGame
        ( IDAble (..)
        , UserId (..), UserC (..), isAdmin
        , BoardC (..), GameResult (..)
        , Log (..), viewLog
-       , MoveType, Move (..)
-       , ActionToken (..), Action (..)
+       , MoveType, MoveWR (..), Move (..)
+       , ActionToken (..), ActionWR (..), Action (..)
        , Turn (..), does'
        , Game (..)
        , turnToMove, turnsToMove
        , play, extractGameResult, extractLog, extractBoard
        , getCurrentPlayer
-       , log, logForMe, logError
+       , log, logForMe, logError, logTODO
        , onlyAdminIsAllowed
        ) where
 
@@ -87,13 +88,6 @@ class BoardC board where
   -- If there is a winner, the board should know about it
   getGameResult :: board -> GameResult
 
-instance BoardC board =>
-         BoardC (Game board, board) where
-  emptyBoard          = (G [], emptyBoard)
-  getCurrentPlayer'   = getCurrentPlayer' . L.view L._2
-  advancePlayerOrder  = L.over L._2 advancePlayerOrder
-  getGameResult       = getGameResult . L.view L._2
-
 --------------------------------------------------------------------------------
 -- ** Log
 
@@ -120,48 +114,114 @@ instance Monoid Log where
 -- A move is the actual change on the board
 
 -- | The type of an move
-type MoveType board r = StateT board -- ^ uses StateT to handle the state of the board as 'board'
-                        ( ExceptT Text -- ^ uses ExceptT to communicate failures
-                          ( WriterT Log -- ^ uses WriterT to log
-                                    ( State (Game board) -- ^ the history of the game
-                                    )
-                          )
-                        )
-                        r -- ^ the value which is calculated
+type InnerMoveType board = ExceptT Text -- ^ uses ExceptT to communicate failures
+                           ( WriterT Log -- ^ uses WriterT to log
+                                     ( State (Game board) -- ^ the history of the game
+                                     )
+                           )
 
 -- | the result of a move is the resulting state together with a bunch of metadata
-type MoveResult board r = (( Either Text -- ^ this maybe contains the error text
-                             ( r -- ^ this is the calculated result
-                             , board ) -- ^ this is the state of the board at the end of the calculation
-                           , Log ) -- ^ this contains the log
+type InnerMoveResult board r = ( ( Either Text -- ^ this maybe contains the error text
+                                           r -- ^ this is the calculated result
+                                 , Log ) -- ^ this contains the log
+                               , Game board ) -- ^ the history of the game
+
+runInnerMoveType :: BoardC board =>
+                    InnerMoveType board a -> InnerMoveResult board a
+runInnerMoveType imt = (S.runState .
+                        W.runWriterT .
+                        E.runExceptT ) imt (G [])
+
+-- | The type of an move
+type MoveType board = StateT board -- ^ uses StateT to handle the state of the board as 'board'
+                      ( InnerMoveType board )
+
+-- | the result of a move is the resulting state together with a bunch of metadata
+type MoveResult board r = ( ( Either Text -- ^ this maybe contains the error text
+                                     ( r -- ^ this is the calculated result
+                                     , board ) -- ^ this is the state of the board at the end of the calculation
+                            , Log ) -- ^ this contains the log
                           , Game board ) -- ^ the history of the game
 
 -- | Something of MoveType can be applied to an inital board state
 runMoveType :: board -> MoveType board a -> MoveResult board a
-runMoveType initial move = ((S.runState .
-                             W.runWriterT .
-                             E.runExceptT .
-                             S.runStateT move) initial) (G [])
+runMoveType initial move = (S.runState .
+                            W.runWriterT .
+                            E.runExceptT .
+                            S.runStateT move) initial (G [])
 
 -- | The wrapper for a move
--- a move does not calculate anything, it just modifies the state (+ failures + log)
-newtype Move board = M {unpackMove :: MoveType board ()}
+-- a 'MoveWR' is a 'Move' which returns something
+newtype MoveWR board r = M {unpackMove :: MoveType board r}
+-- | a 'Move' does not calculate anything, it just modifies the state (+ failures + log)
+type Move board = MoveWR board ()
 
 instance BoardC board =>
          Monoid (Move board) where
-  mempty                = M $ S.modify id -- TODO: make easyier
+  mempty                = M $ S.modify id -- TODO
   mappend (M t1) (M t2) = M $ t1 >> t2
+
+instance BoardC board =>
+         Functor (MoveWR board) where
+  fmap f move = do
+        result <- move
+        return (f result)
+  -- law1: fmap id over a functor, it should be the same as just calling id
+  -- law2: fmap (f . g) = fmap f . fmap g
+
+instance BoardC board =>
+         Applicative (MoveWR board) where
+  pure r      = M $ return r
+  (M getF) <*> (M getX) = M $ do
+    r <- getF
+    x <- getX
+    return $ r x
+  -- law: pure f <*> x `equals` fmap f x
+
+instance BoardC board =>
+         Monad (MoveWR board) where
+  return t    = M $ return t
+  (M t) >>= f = M $ t >>= (unpackMove . f)
+  -- law1: return x >>= f is the same damn thing as f x
+  -- law2: m >>= return is no different than just m
+  -- law3: Doing (m >>= f) >>= g is just like doing m >>= (\x -> f x >>= g)
 
 --------------------------------------------------------------------------------
 -- ** Actions
 -- An action is something a player can take and it results in a move on the board
 
-newtype Action board = A { unpackAction :: UserId -> Move board }
+newtype ActionWR board r = A { unpackAction :: UserId -> MoveWR board r }
+type Action board = ActionWR board ()
 
 instance BoardC board =>
          Monoid (Action board) where
   mempty                = A $ const mempty
   mappend (A a1) (A a2) = A $ \uid -> a1 uid <> a2 uid
+
+instance BoardC board =>
+         Functor (ActionWR board) where
+  fmap f action = do
+        result <- action
+        return (f result)
+  -- law1: fmap id over a functor, it should be the same as just calling id
+  -- law2: fmap (f . g) = fmap f . fmap g
+
+instance BoardC board =>
+         Applicative (ActionWR board) where
+  pure r = A $ const $ return r
+  (A getF) <*> (A getX) = A $ \userId -> do
+    f <- getF userId
+    x <- getX userId
+    return $ f x
+  -- law: pure f <*> x `equals` fmap f x
+
+instance BoardC board =>
+         Monad (ActionWR board) where
+  return t    = A $ const $ return t
+  (A t) >>= f = A $ \userId -> (t userId) >>= ((\f -> f userId) . unpackAction . f)
+  -- law1: return x >>= f is the same damn thing as f x
+  -- law2: m >>= return is no different than just m
+  -- law3: Doing (m >>= f) >>= g is just like doing m >>= (\x -> f x >>= g)
 
 --------------------------------------------------------------------------------
 -- ** ActionTokens
@@ -183,6 +243,8 @@ data Turn board = forall actionToken.
                   ActionToken board actionToken =>
                   Turn { getActingPlayer :: UserId
                        , getActionToken :: actionToken }
+                -- | Choice { getChoosingPlayer :: UserId
+                --          , getChoice :: undefined}
 
 does' :: ActionToken board actionToken =>
          Proxy board -> UserId -> actionToken -> Turn board
@@ -194,7 +256,8 @@ instance Show (Turn board) where
 
 -- | The `Eq` instance of `Action board` is deriven from the `Show` instance
 instance Eq (Turn board) where
-  act1 == act2 = show act1 == show act2
+  turn1 == turn2 = getActingPlayer turn1 == getActingPlayer turn2
+                   && show turn1 == show turn2
 
 -- *** related helper
 -- | redeem the described Move from an turn
@@ -204,6 +267,14 @@ turnToMove (Turn userId actionToken) = (unpackAction $ getAction actionToken) us
 turnsToMove :: BoardC board =>
                [Turn board] -> Move board
 turnsToMove = mconcat . map turnToMove
+
+-- | run a turn on a board
+-- this also advances the player order, i.e. consumes an 'action' 
+runTurn :: BoardC board =>
+           Turn board -> board -> InnerMoveType board board
+runTurn turn b0 = do
+  (_, b1) <- S.runStateT (unpackMove (turnToMove turn)) b0
+  return $ advancePlayerOrder b1
 
 --------------------------------------------------------------------------------
 -- ** Game
@@ -217,67 +288,46 @@ newtype Game state = G [Turn state]
 -- * play
 --------------------------------------------------------------------------------
 
-getGameResultM :: BoardC s =>
-                  MoveType s GameResult
-getGameResultM = S.gets getGameResult
+type PlayResult board = InnerMoveResult board board
 
--- | take an action and wrap it to also take care of
---  - the game history
---  - some rules:
---    - a game which is already finished should not be modified
---    - only the current user is allowed to act
-actionToWrappedMove :: BoardC b =>
-                       Turn b -> Move b
-actionToWrappedMove turn = let
-  -- | A finished game should not be modified
-  onlyIfGameHasNotYetFinished :: BoardC s =>
-                                 MoveType s ()
-  onlyIfGameHasNotYetFinished = do
-    gameResult <- getGameResultM
-    unless (gameResult == NoWinner) $
-      logError $ "the game is already over"
-
-  -- | Only the current player (determined by the board-state) is allowed to act
-  -- (or Admin)
-  onlyCurrentUserIsAllowedToAct :: BoardC s =>
-                                   MoveType s ()
-  onlyCurrentUserIsAllowedToAct = do
-    let actingUser = getActingPlayer turn
-    currentPlayer <- getCurrentPlayer
-    unless (actingUser == currentPlayer || isAdmin actingUser) $
-      logError $ "the user " ++ show actingUser ++ " is not allowed to take an turn"
-
-  in M $ do
-    onlyIfGameHasNotYetFinished
-    onlyCurrentUserIsAllowedToAct
-    unpackMove $ turnToMove turn
-
-actionsToWrappedMove :: BoardC board =>
-                              [Turn board] -> Move board
-actionsToWrappedMove = mconcat . map actionToWrappedMove
-
-type PlayResult board = MoveResult board GameResult
-
--- | A game can be played and the resulting board as 'PlayResult board' is returned
+-- | one is able to play a game
 play :: BoardC board =>
         Game board -> PlayResult board
-play (G game) = runMoveType emptyBoard $ do
-  unpackMove $ actionsToWrappedMove game
-  getGameResultM
+play (G turns)= (runInnerMoveType . play') (reverse turns)
+  where
+    play' :: BoardC board =>
+             [Turn board] -> InnerMoveType board board
+    play' = foldM applyTurn emptyBoard
+    applyTurn :: BoardC board =>
+                 board -> Turn board -> InnerMoveType board board
+    applyTurn b0 turn = let
+      currentPlayer = getCurrentPlayer' b0
+      actingPlayer  = getActingPlayer turn
+      in do
+        (lift . lift . S.modify) (\ (G g) -> G $ turn : g)
+        case currentPlayer == actingPlayer of
+          True -> runTurn turn b0
+          False -> let
+            error = "the player " ++ show actingPlayer ++ " is not allowed to take an action"
+            in do
+              lift . W.tell . Log . const . T.pack $ "Error: " ++ error
+              E.throwE $ T.pack error
 
 --------------------------------------------------------------------------------
 -- ** related helper
-
-extractGameResult :: PlayResult board -> GameResult
-extractGameResult ((Right (result,_),_),_) = result
-extractGameResult _                        = NoWinner
 
 extractLog :: PlayResult board -> Log
 extractLog ((_,log),_) = log
 
 extractBoard :: PlayResult board -> Maybe board
-extractBoard ((Right (_,board),_),_) = Just board
-extractBoard _                       = Nothing
+extractBoard ((Right board,_),_) = Just board
+extractBoard _                   = Nothing
+
+extractGameResult :: BoardC board =>
+                     PlayResult board -> GameResult
+extractGameResult r = case extractBoard r of
+  Just b -> getGameResult b
+  _      -> NoWinner
 
 --------------------------------------------------------------------------------
 -- * Other helper for working in the monad
@@ -305,20 +355,48 @@ logForMe textPrivate textPublic = do
                then textPrivate
                else textPublic
 
+-- | logError logs an error and throws the exception
+-- this ends the game
 logError :: BoardC s =>
             String -> MoveType s a
 logError error = do
   lift . lift . W.tell . Log . const . T.pack $ "Error: " ++ error
   lift . E.throwE $ T.pack error
 
--- ** helper for defining Actions and Moves
+-- | logError logs an error and throws the exception
+-- this ends the game
+logTODO :: BoardC s =>
+           String -> MoveType s a
+logTODO todo = do
+  lift . lift . W.tell . Log . const . T.pack $ "TODO: " ++ todo
+  lift . E.throwE $ T.pack $ "TODO: " ++ todo
+
+-- ** helper for defining Moves and MoveType things
 
 getCurrentPlayer :: BoardC s =>
                     MoveType s UserId
 getCurrentPlayer = S.gets getCurrentPlayer'
+
+-- getPlayerById :: BoardC s =>
+--                  UserC user => UserId -> MoveType s user
+-- getPlayerById uid = do
+--   maybePlayer <- S.gets (getPlayerById' uid)
+--   case maybePlayer of
+--     Just player -> return player
+--     Nothing     -> logError $ "There is no player with the playerId " ++ show uid
+
+-- ** helper for defining Actions
 
 onlyAdminIsAllowed :: BoardC board =>
                       Action board -> Action board
 onlyAdminIsAllowed (A t) = A $ \case
   Admin -> t Admin
   _     -> M $ logError "Action was not authorized"
+
+onlyCurrentPlayerIsAllowed :: BoardC board =>
+                              Action board -> Action board
+onlyCurrentPlayerIsAllowed (A t) = A $ \userId -> M $ do
+  currentPlayer <- S.gets getCurrentPlayer'
+  if (currentPlayer == userId || userId == Admin)
+    then logError $ "Player " ++ show userId ++ " is not allowed to take an action"
+    else unpackMove $ t userId
