@@ -41,11 +41,9 @@ data Init = Init
           deriving (Eq, Show, Read)
 instance ActionToken Board Init where
   getAction Init = onlyAdminIsAllowed $
-                   A $ \userId ->
-    M ( do
-           log "Init the board"
-           S.modify (\board -> board{ _drawStacks=getDeck })
-      )
+                   mkA $ \userId -> do
+                     log "Init the board"
+                     S.modify (\board -> board{ _drawStacks=getDeck })
 
 -- | Shuffle
 -- create an empty game using a given seed
@@ -53,22 +51,18 @@ data Shuffle = Shuffle Int
              deriving (Eq, Show, Read)
 instance ActionToken Board Shuffle where
   getAction (Shuffle seed) = onlyAdminIsAllowed $
-                             A $ \userId ->
-    M ( do
-           logForMe ("Shuffle with seed [" ++ show seed ++ "]")
-             "Shuffle with seed [only visible for admin]"
-           S.modify (shuffleState seed)
-      )
+                             mkA $ \userId -> do
+                               logForMe ("Shuffle with seed [" ++ show seed ++ "]")
+                                 "Shuffle with seed [only visible for admin]"
+                               S.modify (shuffleState seed)
 
 data DrawDominations = DrawDominations
                      deriving (Eq, Show, Read)
 instance ActionToken Board DrawDominations where
   getAction DrawDominations = onlyAdminIsAllowed $
-                              A $ \userId ->
-    M ( do
-           log "Draw dominations"
-           S.modify id -- TODO
-      )
+                              mkA $ \userId -> do
+                                log "Draw dominations"
+                                S.modify id -- TODO
 
 -- | AddPlayer
 -- add an player with a given playerId to the game
@@ -76,17 +70,15 @@ data AddPlayer = AddPlayer String
                deriving (Eq, Show, Read)
 instance ActionToken Board AddPlayer where
   getAction (AddPlayer playerId) = onlyAdminIsAllowed $
-                                   A $ \userId ->
-    M ( do
-           log ("Add player: " ++ playerId)
-           state <- S.get
-           case view machineState state of
-             Prepare -> do
-               let newPlayer = mkPlayer playerId
-               S.modify (const (players %~ (newPlayer :) $
-                                state))
-             _       -> logError "not in prepare state."
-      )
+                                   mkA $ \userId -> do
+                                     log ("Add player: " ++ playerId)
+                                     state <- S.get
+                                     case view machineState state of
+                                       Prepare -> do
+                                         let newPlayer = mkPlayer playerId
+                                         S.modify (const (players %~ (newPlayer :) $
+                                                          state))
+                                       _       -> logError "not in prepare state."
 
 -- | StartGame
 -- finish preperations of the game

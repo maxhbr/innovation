@@ -31,7 +31,7 @@ import           Game.Innovation.Types
 data Skip = Skip
           deriving (Eq, Show, Read)
 instance ActionToken Board Skip where
-  getAction Skip = A $ const $ M $ log "... skip"
+  getAction Skip = mkA . const $ log "... skip"
 
 modifyPlayer :: UserId -> (Player -> Player) -> MoveType Board ()
 modifyPlayer userId f = do
@@ -43,7 +43,7 @@ modifyPlayer userId f = do
 
 -- | Try to draw an card of an specific age
 drawAnAnd :: Age -> ActionWR Board Card
-drawAnAnd inputAge = A $ \userId -> M $ do
+drawAnAnd inputAge = mkA $ \userId -> do
   drawAge <- getDrawAge inputAge
   case drawAge of
     Just age -> do
@@ -55,19 +55,18 @@ drawAnAnd inputAge = A $ \userId -> M $ do
 
 -- | Try to draw an card of current age
 drawAnd :: ActionWR Board Card
-drawAnd = A $ \userId -> M $ do
+drawAnd = mkA $ \userId -> do
   actingPlayer <- getPlayerById userId
   let playersAge = getPlayersAge actingPlayer
   unpackMove $ (unpackAction $ drawAnAnd playersAge) userId
 
 drawNAnd :: Int -> ActionWR Board [Card]
-drawNAnd n = A $ \userId ->
-  M (replicateM n
-     (unpackMove
-      (unpackAction drawAnd userId)))
+drawNAnd n = mkA $ \userId -> (replicateM n
+                               (unpackMove
+                                (unpackAction drawAnd userId)))
 
 putIntoHand :: Card -> Action Board
-putIntoHand card = A $ \userId -> M $ do
+putIntoHand card = mkA $ \userId -> do
   actingPlayer <- getPlayerById userId
   -- let actingPlayer = actingPlayer {_hand = card : (_hand actingPlayer)}
   -- writePlayer $ actingPlayer
@@ -113,7 +112,7 @@ instance ActionToken Board Draw where
 data Play = Play CardId
           deriving (Eq, Read, Show)
 instance ActionToken Board Play where
-  getAction (Play cardId) = A $ \userId ->
+  getAction (Play cardId) = mkA $ \userId ->
     undefined
 
 --------------------------------------------------------------------------------
@@ -121,7 +120,7 @@ instance ActionToken Board Play where
 data Dominate = Dominate Age
               deriving (Eq, Read, Show)
 instance ActionToken Board Dominate where
-  getAction (Dominate age) = A $ \userId ->
+  getAction (Dominate age) = mkA $ \userId ->
     undefined
 
 --------------------------------------------------------------------------------
@@ -129,5 +128,5 @@ instance ActionToken Board Dominate where
 data Activate = Activate Color
               deriving (Eq, Read, Show)
 instance ActionToken Board Activate where
-  getAction (Activate color) = A $ \userId ->
+  getAction (Activate color) = mkA $ \userId ->
     undefined

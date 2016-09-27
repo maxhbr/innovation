@@ -25,6 +25,9 @@ library
                      , random, random-shuffle
                      , lens
   exposed-modules:     Game.MetaGame
+                     , Game.MetaGame.Helper
+                     , Game.MetaGame.Play
+                     , Game.MetaGame.Types
                      , Game.Innovation
                      , Game.Innovation.Types
                      , Game.Innovation.Actions

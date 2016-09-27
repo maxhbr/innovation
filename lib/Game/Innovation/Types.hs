@@ -165,7 +165,7 @@ makeLenses ''Player
 instance Eq Player where
   p1 == p2 = _playerId p1 == _playerId p2
 
-instance UserC Player where
+instance PlayerC Player where
   getUId = _playerId
 
 --------------------------------------------------------------------------------
