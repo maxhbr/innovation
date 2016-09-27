@@ -3,6 +3,7 @@ module Game.Innovation.ActionsSpec
 import SpecHelper
 import Control.Lens
 import Data.Maybe
+import Data.Monoid
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Text as T
@@ -11,98 +12,82 @@ import Game.Innovation.TestHelper
 
 import Game.MetaGame
 import Game.Innovation.Types
+import           Game.Innovation.TypesLenses
 import Game.Innovation.Actions
 
 seed = 12345 :: Int
 
 printLog = TIO.putStrLn . viewLog Admin . extractLog
 
+
 spec :: Spec
-spec =
-  describe "Game.Innovation.Actions.Admin" $ do
+spec = let
+  isSuccessfullGameWithoutWinner game = do
+    let playResult = play game
+    printLog playResult
+    extractGameResult playResult `shouldBe` NoWinner
+    let stateM = extractBoard playResult
+    isJust stateM `shouldBe` True
+    let state = fromJust stateM
+    return (state, playResult)
+
+  in describe "Game.Innovation.Actions.Admin" $ do
+
+    let emptyGame = mkG []
     it "emty game setup" $ do
-      let game = G (reverse [] :: [Turn Board])
-      let playResult = play game
-      printLog playResult
-      extractGameResult playResult `shouldBe` NoWinner
-      let stateM = extractBoard playResult
-      isJust stateM `shouldBe` True
-      let state = fromJust stateM
+      (state, playResult) <- isSuccessfullGameWithoutWinner emptyGame
       view players state `shouldBe` []
       view machineState state `shouldBe` Prepare
-      let log = (viewLog Admin . extractLog) playResult
-      log `shouldBe` (T.pack "")
+      (viewLog Admin . extractLog) playResult `shouldBe` (T.pack "")
+
+    let initedGame = mkG [Admin `does` Init] <> emptyGame
     it "just init" $ do
-      let game = G $ reverse [ Admin `does` Init ]
-      let playResult = play game
-      printLog playResult
-      extractGameResult playResult `shouldBe` NoWinner
-      let stateM = extractBoard playResult
-      isJust stateM `shouldBe` True
-      let state = fromJust stateM
+      (state, playResult) <- isSuccessfullGameWithoutWinner initedGame
       view players state `shouldBe` []
       isJust (Map.lookup Age1 (view drawStacks state)) `shouldBe` True
       view machineState state `shouldBe` Prepare
+
+    let toEarlyStartedGame = initedGame <=> (Admin `does` StartGame seed)
     it "just init and start" $ do
-      let game = G $ reverse [ Admin `does` Init
-                             , Admin `does` StartGame seed ]
-      let playResult = play game
-      printLog playResult
+      let playResult = play toEarlyStartedGame
       extractGameResult playResult `shouldBe` NoWinner
       let stateM = extractBoard playResult
       isJust stateM `shouldBe` False
+
     it "just init and start should not recover" $ do
-      let game = G $ reverse [ Admin `does` Init
-                             , Admin `does` StartGame seed
-                               -- the following should not appear in the log
-                             , Admin `does` AddPlayer "user1"
-                             , Admin `does` AddPlayer "user2"
-                             , Admin `does` StartGame seed]
+      let game = toEarlyStartedGame <>
+                       -- the following should not appear in the log
+                 mkG [ Admin `does` AddPlayer "user1"
+                     , Admin `does` AddPlayer "user2"
+                     , Admin `does` StartGame seed ]
       let playResult = play game
-      printLog playResult
+      -- printLog playResult
       extractGameResult playResult `shouldBe` NoWinner
       let stateM = extractBoard playResult
       isJust stateM `shouldBe` False
       let log = (viewLog Admin . extractLog) playResult
       (T.pack "user1") `T.isInfixOf` log `shouldBe` False
+
+    let gameWithPlayers = initedGame <>
+                          mkG [Admin `does` AddPlayer "user1"
+                              , Admin `does` AddPlayer "user2" ]
     it "just init + addPlayers" $ do
-      let game = G $ reverse [ Admin `does` Init
-                             , Admin `does` AddPlayer "user1"
-                             , Admin `does` AddPlayer "user2" ]
-      let playResult = play game
-      printLog playResult
-      extractGameResult playResult `shouldBe` NoWinner
-      let stateM = extractBoard playResult
-      isJust stateM `shouldBe` True
-      let state = fromJust stateM
+      (state, _) <- isSuccessfullGameWithoutWinner gameWithPlayers
       map getUId (view players state) `shouldBe` [U "user2", U "user1"]
       view machineState state `shouldBe` Prepare
+
+    let startedGame = gameWithPlayers <=> (Admin `does` StartGame seed)
     it "just init + addPlayers + StartGame" $ do
-      let game = G $ reverse [ Admin `does` Init
-                             , Admin `does` AddPlayer "user1"
-                             , Admin `does` AddPlayer "user2"
-                             , Admin `does` StartGame seed]
-      let playResult = play game
-      printLog playResult
-      extractGameResult playResult `shouldBe` NoWinner
-      let stateM = extractBoard playResult
-      isJust stateM `shouldBe` True
-      let state = fromJust stateM
+      (state, _) <- isSuccessfullGameWithoutWinner startedGame
       length (view players state) `shouldBe` 2
       view machineState state `shouldNotBe` Prepare
+
+    let someActionsTaken = startedGame <>
+                           mkG [ U "user2" `does` Draw
+                               , U "user1" `does` Draw
+                               , U "user1" `does` Play (CardId "[Age1: Sailing]")]
     it "just init + addPlayers + StartGame + draw" $ do
-      let game = G $ reverse [ Admin `does` Init
-                             , Admin `does` AddPlayer "user1"
-                             , Admin `does` AddPlayer "user2"
-                             , Admin `does` StartGame seed
-                             , U "user2" `does` Draw
-                             , U "user1" `does` Draw]
-      let playResult = play game
-      printLog playResult
-      extractGameResult playResult `shouldBe` NoWinner
-      let stateM = extractBoard playResult
-      isJust stateM `shouldBe` True
-      let state = fromJust stateM
+      (state, _) <- isSuccessfullGameWithoutWinner someActionsTaken
       length (view players state) `shouldBe` 2
       view machineState state `shouldNotBe` Prepare
       exactlyAllCardsArePresent state `shouldBe` True

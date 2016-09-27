@@ -19,7 +19,7 @@ import           Control.Lens
 
 import           Game.MetaGame
 import           Game.Innovation.Types
-import           Game.Innovation.Cards
+import           Game.Innovation.TypesLenses
 
 --------------------------------------------------------------------------------
 -- Helper functions

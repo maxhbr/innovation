@@ -13,11 +13,11 @@ module Game.MetaGame.Types
        , InnerMoveType, InnerMoveResult, runInnerMoveType
        , MoveType, MoveResult, runMoveType
        , MoveWR (..), Move (..)
-       , ActionWR (..), Action (..)
+       , ActionWR (..), Action (..), takes
        , ActionToken (..), unpackToken
        , Turn (..), does', runTurn
-       , Game (..)
        , turnToMove
+       , Game (..), mkG, (<=>)
        )
        where
 
@@ -240,6 +240,11 @@ instance BoardC board =>
   return t    = A $ const $ return t
   (A t) >>= f = A $ \userId -> (t userId) >>= ((\f -> f userId) . unpackAction . f)
 
+
+takes :: BoardC board =>
+         UserId -> ActionWR board a -> MoveType board a
+takes uid act = unpackMove (unpackAction act uid)
+
 --------------------------------------------------------------------------------
 -- ** ActionTokens
 -- ActionTokens are used to identify actions
@@ -298,5 +303,15 @@ runTurn turn b0 = do
 
 -- | A game consists of all the turns, i.e. taken actions, in chronological order
 -- the last taken action is the head
-newtype Game state = G [Turn state]
+newtype Game board = G [Turn board]
                    deriving (Show)
+
+mkG :: [Turn board] -> Game board
+mkG = G . reverse
+
+(<=>) :: Game board -> Turn board -> Game board
+(G g) <=> t = G $ t:g
+
+instance Monoid (Game board) where
+  mempty                = G []
+  mappend (G g2) (G g1) = G $ mappend g1 g2

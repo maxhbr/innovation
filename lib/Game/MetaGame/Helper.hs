@@ -57,7 +57,6 @@ innerLogWarn :: BoardC s =>
                  String -> InnerMoveType s ()
 innerLogWarn warn = log' $ "Warning: " ++ warn
 
-
 -- | logError logs an error and throws the exception
 -- this ends the game
 logError :: BoardC s =>
@@ -69,6 +68,18 @@ innerLogError :: BoardC s =>
 innerLogError error = do
   log' $ "Error: " ++ error
   E.throwE $ T.pack error
+
+-- | logFatal logs an fatal and throws the exception
+-- this ends the game
+logFatal :: BoardC s =>
+            String -> MoveType s a
+logFatal = lift . innerLogFatal
+
+innerLogFatal :: BoardC s =>
+                 String -> InnerMoveType s a
+innerLogFatal fatal = do
+  log' $ "Fatal: " ++ fatal
+  E.throwE $ T.pack fatal
 
 -- | logTODO logs an unimplemented thing and throws the exception
 -- this ends the game

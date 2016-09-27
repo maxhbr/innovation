@@ -1,6 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE LambdaCase #-}
 module Game.Innovation.Types
        where
@@ -12,7 +11,6 @@ import qualified Data.Text as T
 import           Data.Proxy
 import           System.Random
 import           System.Random.Shuffle (shuffle')
-import           Control.Lens (makeLenses, Lens, Lens')
 import qualified Control.Lens as L
 import           Data.Monoid
 import           Control.Monad.Trans.Identity
@@ -57,40 +55,13 @@ symbols = [minBound ..]
 --------------------------------------------------------------------------------
 -- Dogmas
 --------------------------------------------------------------------------------
-data StackId = Hand UserId
-             | PlayStack UserId Color
-             | Influence UserId
-             | Dominations UserId
-             | DrawStack Age
-             deriving (Eq, Show, Read)
-
-data Selector
-  = RawSelector String -- ^ the verbal formulation of an selector
-
-  | TheStackOfPlayer UserId StackId
---  | TheStackWithCard CardId
---   -- -| TheCard Card
---   -- Selector combinators
---   | OrSelector [Selector]
---   | AndSelector [Selector]
---   | OneOf Selector
---   | HalfOf Selector
---   | AllOf Selector
---   | UpTo Selector
-  deriving (Eq,Show)
-
-data DogmaDescription
-  = RawDescription String -- ^ the verbal formulation of an description
-
-  -- DogmaDescription combinators
-  | YouMay DogmaDescription
-  | AndAlsoDo DogmaDescription DogmaDescription
-  deriving (Eq,Show)
 
 data Dogma
-  = Dogma Symbol DogmaDescription
-  | IDemand Symbol DogmaDescription
-  deriving (Eq,Show)
+  = Dogma Symbol String (Action Board)
+  | IDemand Symbol String (Action Board)
+instance Show Dogma where
+  show (Dogma s d _)   = "[" ++ pp s ++ "] " ++ d
+  show (IDemand s d _) = "[" ++ pp s ++ "] " ++ d
 
 --------------------------------------------------------------------------------
 -- Cards
@@ -100,7 +71,6 @@ data Production
   = None
   | Produce { _prodSymbol :: Symbol }
   deriving (Eq,Show)
-makeLenses ''Production
 
 isSymbolProduction :: Production -> Bool
 isSymbolProduction (Produce _) = True
@@ -118,25 +88,32 @@ data Productions
                 , _bcProd :: Production
                 , _brProd :: Production }
   deriving (Eq,Show)
-makeLenses ''Productions
 
 data Card
   = Card { _title       :: String
          , _color       :: Color
          , _age         :: Age
          , _productions :: Productions
-         , _dogmaTexts  :: [String]
          , _dogmas      :: [Dogma] }
-  deriving (Eq,Show)
-makeLenses ''Card
+  deriving (Show)
 
 data CardId = CardId { unpackCardId :: String }
             deriving (Eq, Show, Read)
+
+instance Ord CardId where
+  compare (CardId c1) (CardId c2) = compare c1 c2
+
 getCId :: Card -> CardId
 getCId Card{ _title=t, _age=a } = CardId $ "[" ++ show a ++ ": " ++ t ++ "]"
 
+instance Eq Card where
+  c1 == c2 = getCId c1 == getCId c2
+
 instance PrettyPrint Card where
   pp = unpackCardId . getCId
+
+instance Ord Card where
+  compare c1 c2 = compare (getCId c1) (getCId c2)
 
 --------------------------------------------------------------------------------
 -- Players
@@ -160,7 +137,6 @@ data Player
            , _dominations :: Stack
            , _hand        :: Stack }
   deriving (Show)
-makeLenses ''Player
 
 instance Eq Player where
   p1 == p2 = _playerId p1 == _playerId p2
@@ -172,14 +148,14 @@ instance PlayerC Player where
 -- Game state
 --------------------------------------------------------------------------------
 
-data Choice = HasToChoose UserId Selector
-            | HasChosen UserId Selector
-            deriving (Eq, Show)
+-- data Choice = HasToChoose UserId Selector
+--             | HasChosen UserId Selector
+--             deriving (Eq, Show)
 
 data MachineState
   = Prepare
   | WaitForTurn
-  | WaitForChoices [Choice]
+  -- | WaitForChoices [Choice]
   | FinishedGame GameResult
   deriving (Eq, Show)
 
@@ -192,21 +168,22 @@ data Board = Board { _machineState  :: MachineState -- ^ The internal state of t
                    , _playerOrder   :: PlayerOrder -- ^ the order, in which the players take actions
                    }
              deriving (Show)
-makeLenses ''Board
 
 instance BoardC Board where
   emptyBoard = Board Prepare Map.empty [] [] []
 
-  getCurrentPlayer'  Board{ _playerOrder=[] }    = Admin
-  getCurrentPlayer'  Board{ _playerOrder=order } = head order
+  getCurrentPlayer' Board{ _machineState= (FinishedGame _)} = Admin
+  getCurrentPlayer' Board{ _machineState= Prepare}          = Admin
+  getCurrentPlayer' Board{ _playerOrder=[] }                = Admin
+  getCurrentPlayer' Board{ _playerOrder=order }             = head order
 
-  advancePlayerOrder = L.over playerOrder advancePlayerOrder'
+  advancePlayerOrder b@Board{ _playerOrder = ps } = b{ _playerOrder = (advancePlayerOrder' ps) }
     where
       advancePlayerOrder' :: PlayerOrder -> PlayerOrder
       advancePlayerOrder' []                       = []
       advancePlayerOrder' [p]                      = [p]
-      advancePlayerOrder' (p1:(p2:ps)) | p1 == p2  = p2:ps
-                                       | otherwise = p2:ps ++ [p1,p1]
+      advancePlayerOrder' (p1:(p2:ps)) | p1 == p2  = p2:ps -- ^ one consumes actions as long as it is not the last one
+                                       | otherwise = p2:ps ++ [p1,p1] -- ^ every player gets two actions
 
   doAtomicUpdate = determineWinner . doSpecialAchievments
     where
@@ -237,9 +214,10 @@ mkPlayer playerId = Player (U playerId)
 
 -- | shuffle the draw stacks and the players
 shuffleState :: Int -> Board -> Board
-shuffleState seed gs = L.over players shuffle gs{ _drawStacks=permutatedDS }
+shuffleState seed gs = gs{ _drawStacks=permutatedDS, _players=permutatedPlayers }
   where
     stdGen = mkStdGen seed
     shuffle []    = []
     shuffle list = shuffle' list (length list) stdGen
     permutatedDS = Map.map shuffle $ _drawStacks gs
+    permutatedPlayers = shuffle $ _players gs
