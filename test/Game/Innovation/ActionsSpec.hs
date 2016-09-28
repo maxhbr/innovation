@@ -31,6 +31,14 @@ spec = let
     let state = fromJust stateM
     return (state, playResult)
 
+  isFailedGame game = do
+    let playResult = play game
+    printLog playResult
+    extractGameResult playResult `shouldBe` NoWinner
+    let stateM = extractBoard playResult
+    isJust stateM `shouldBe` False
+    return playResult
+
   in describe "Game.Innovation.Actions.Admin" $ do
 
     let emptyGame = mkG []
@@ -49,22 +57,17 @@ spec = let
 
     let toEarlyStartedGame = initedGame <=> (Admin `does` StartGame seed)
     it "just init and start" $ do
-      let playResult = play toEarlyStartedGame
-      extractGameResult playResult `shouldBe` NoWinner
-      let stateM = extractBoard playResult
-      isJust stateM `shouldBe` False
+      playResult <- isFailedGame toEarlyStartedGame
+      let log = (viewLog Admin . extractLog) playResult
+      (T.unpack log) `shouldContain` "Error"
 
+    let toEarlyStartedGameTryingtoRecover = toEarlyStartedGame <>
+                     -- the following should not appear in the log
+               mkG [ Admin `does` AddPlayer "user1"
+                   , Admin `does` AddPlayer "user2"
+                   , Admin `does` StartGame seed ]
     it "just init and start should not recover" $ do
-      let game = toEarlyStartedGame <>
-                       -- the following should not appear in the log
-                 mkG [ Admin `does` AddPlayer "user1"
-                     , Admin `does` AddPlayer "user2"
-                     , Admin `does` StartGame seed ]
-      let playResult = play game
-      -- printLog playResult
-      extractGameResult playResult `shouldBe` NoWinner
-      let stateM = extractBoard playResult
-      isJust stateM `shouldBe` False
+      playResult <- isFailedGame toEarlyStartedGameTryingtoRecover
       let log = (viewLog Admin . extractLog) playResult
       (T.pack "user1") `T.isInfixOf` log `shouldBe` False
 
@@ -84,10 +87,39 @@ spec = let
 
     let someActionsTaken = startedGame <>
                            mkG [ U "user2" `does` Draw
-                               , U "user1" `does` Draw
-                               , U "user1" `does` Play (CardId "[Age1: Sailing]")]
+                               , U "user1" `does` Draw]
     it "just init + addPlayers + StartGame + draw" $ do
       (state, _) <- isSuccessfullGameWithoutWinner someActionsTaken
+      length (view players state) `shouldBe` 2
+      view machineState state `shouldNotBe` Prepare
+      exactlyAllCardsArePresent state `shouldBe` True
+
+    let drawManyCards = someActionsTaken <>
+                        mkG [ U "user1" `does` Draw
+                            , U "user2" `does` Draw
+                            , U "user2" `does` Draw
+                            , U "user1" `does` Draw
+                            , U "user1" `does` Draw
+                            , U "user2" `does` Draw
+                            , U "user2" `does` Draw
+                            , U "user1" `does` Draw]
+    it "just init + addPlayers + StartGame + drawMany" $ do
+      (state, _) <- isSuccessfullGameWithoutWinner drawManyCards
+      length (view players state) `shouldBe` 2
+      view machineState state `shouldNotBe` Prepare
+      exactlyAllCardsArePresent state `shouldBe` True
+
+    let playCardNotInHand = someActionsTaken <=>
+                           (U "user1" `does` Play (CardId "[Age1: XXX]"))
+    it "just init + addPlayers + StartGame + draw + playStupid" $ do
+      playResult <- isFailedGame playCardNotInHand
+      let log = (viewLog Admin . extractLog) playResult
+      (T.unpack log) `shouldContain` "Error"
+
+    let playValidCard = someActionsTaken <=>
+                        (U "user1" `does` Play (CardId "[Age1: Sailing]"))
+    it "just init + addPlayers + StartGame + draw + play" $ do
+      (state, _) <- isSuccessfullGameWithoutWinner playValidCard
       length (view players state) `shouldBe` 2
       view machineState state `shouldNotBe` Prepare
       exactlyAllCardsArePresent state `shouldBe` True

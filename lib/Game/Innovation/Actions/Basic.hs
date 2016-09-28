@@ -118,6 +118,8 @@ putIntoPlay card = mkA $ \userId -> let
   put1IntoPlay :: Card -> MoveType Board ()
   put1IntoPlay card = do
     log ("put the card " ++ pp card ++ " into play")
+    let color = L.view L.color card
+    modifyPlayer userId $ L.over L.stacks (Map.adjust (card :) color)
   in mapM_ put1IntoPlay card
 
 score :: [Card] -> Action Board

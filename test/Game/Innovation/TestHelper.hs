@@ -3,6 +3,7 @@ module Game.Innovation.TestHelper
 
 import SpecHelper
 
+import Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
 
@@ -18,14 +19,13 @@ getAllCurrentCards (Board _ drawStacks dominateables players _) = cardsInDrawSta
     cardsInDrawStacks = getAllCardsFromMap drawStacks
     cardsAtPlayers    = concatMap getAllCardsOfPlayer players
     getAllCardsOfPlayer :: Player -> Stack
-    getAllCardsOfPlayer (Player _ stacks _ influence dominations hand) = undefined
-
-getAllStartingCards :: Stack
-getAllStartingCards = getAllCardsFromMap getDeck
+    getAllCardsOfPlayer (Player _ stacks _ influence dominations hand) = getAllCardsFromMap stacks ++ influence ++ dominations ++ hand
 
 exactlyAllCardsArePresent :: Board -> Bool
-exactlyAllCardsArePresent state = undefined
+exactlyAllCardsArePresent board = noCardsAreDuplicates && allCardsArePresent
   where
-    noCardsAreDuplicates = undefined
-    allCardsArePresent   = undefined
+    allCurrentCards      = sort $ getAllCurrentCards board
+    allStartingCards     = sort getCards
+    noCardsAreDuplicates = allCurrentCards == nub allCurrentCards
+    allCardsArePresent   = allCurrentCards == allStartingCards
 

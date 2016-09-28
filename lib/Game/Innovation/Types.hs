@@ -1,6 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Game.Innovation.Types
        where
 
@@ -122,12 +123,26 @@ instance Ord Card where
 type Stack = [Card]
 emptyStack = [] :: Stack
 
+instance PrettyPrint [Card] where
+  pp [] = "[ 0 Cards ]"
+  pp cs = "[ " ++ show (length cs) ++ " Cards (head is " ++ pp (head cs) ++ " ]"
+
+
+instance (PrettyPrint k, PrettyPrint v) =>
+         PrettyPrint (Map k v) where
+  pp = let
+    f k a result = result ++ "" ++ pp k ++ ": " ++ pp a ++ "\n"
+    in Map.foldWithKey f ""
+
 data SplayState
   = SplayedLeft
   | SplayedRight
   | SplayedUp
   | NotSplayed
   deriving (Eq,Show,Enum,Bounded)
+           
+instance PrettyPrint SplayState where
+  pp = show
 
 data Player
   = Player { _playerId    :: UserId
@@ -144,6 +159,14 @@ instance Eq Player where
 instance PlayerC Player where
   getUId = _playerId
 
+instance PrettyPrint Player where
+  pp p = "** Player: " ++ pp (_playerId p) ++ ":\n"
+         ++ pp (_stacks p)
+         ++ pp (_splayStates p)
+         ++ "influence: " ++ pp (_influence p) ++ "\n"
+         ++ "dominations: " ++ pp (_dominations p) ++ "\n"
+         ++ "hand: " ++ pp (_hand p) ++ "\n"
+
 --------------------------------------------------------------------------------
 -- Game state
 --------------------------------------------------------------------------------
@@ -158,6 +181,8 @@ data MachineState
   -- | WaitForChoices [Choice]
   | FinishedGame GameResult
   deriving (Eq, Show)
+instance PrettyPrint MachineState where
+  pp = show
 
 type PlayerOrder = [UserId]
 
@@ -196,6 +221,13 @@ instance BoardC Board where
       FinishedGame gr -> gr
       _               -> NoWinner
 
+instance PrettyPrint Board where
+  pp b = (replicate 60 '=') ++ "\n"
+         ++ "Board at " ++ pp (_machineState b) ++ " and current player is " ++ pp (getCurrentPlayer' b) ++ ":\n"
+         ++ pp (_drawStacks b)
+         ++ "dominateable: " ++ pp (_dominateables b) ++ "\n"
+         ++ concatMap pp (_players b)
+
 does :: ActionToken Board actionToken =>
         UserId -> actionToken -> Turn Board
 does = does' (Proxy :: Proxy Board)
@@ -206,11 +238,11 @@ does = does' (Proxy :: Proxy Board)
 
 mkPlayer :: String -> Player
 mkPlayer playerId = Player (U playerId)
-                           (Map.fromList $ zip colors $ repeat [])
+                           (Map.fromList $ zip colors $ repeat emptyStack)
                            (Map.fromList $ zip colors $ repeat NotSplayed)
-                           []
-                           []
-                           []
+                           emptyStack
+                           emptyStack
+                           emptyStack
 
 -- | shuffle the draw stacks and the players
 shuffleState :: Int -> Board -> Board
