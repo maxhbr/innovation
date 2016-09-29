@@ -29,34 +29,51 @@ type PlayResult board = InnerMoveResult board board
 -- | one is able to play a game
 play :: BoardC board =>
         Game board -> PlayResult board
-play (G turns)= (runInnerMoveType . play') (reverse turns)
+play (G history)= (runInnerMoveType . play') (accumulateChoices history)
   where
+    accumulateChoices :: History board -> [(Turn board, [Choice])]
+    accumulateChoices = reverse . accumulateChoices' []
+      where
+        accumulateChoices' :: [Choice] -> History board -> [(Turn board, [Choice])]
+        accumulateChoices' cs ((HChoice c):hs) = accumulateChoices' (c:cs) hs
+        accumulateChoices' cs ((HTurn t):hs)   = (t, cs) : accumulateChoices' [] hs
+        accumulateChoices' _  []               = [] -- drop trailing choices
+
     play' :: BoardC board =>
-             [Turn board] -> InnerMoveType board board
+             [(Turn board, [Choice])] -> InnerMoveType board board
     play' = foldM applyTurn emptyBoard
+
+    applyTurn :: BoardC board =>
+                 board -> (Turn board, [Choice]) -> InnerMoveType board board
+    applyTurn b0 (turn, choices) = do
+      when (hasWinner b0) $
+        logError' $ "game already over"
+
+      let currentPlayer = getCurrentPlayer' b0
+      let actingPlayer  = getActingPlayer turn
+
+      case currentPlayer == actingPlayer of
+        True -> do
+          r <- runTurn turn b0
+          --  this drops all choices incl. action if only one is invalid?
+          (lift . lift . S.modify) (\ (G g) -> G $ HTurn turn : g)
+          mapM_ (\c -> (lift . lift . S.modify) (\ (G g) -> G $ HChoice c : g)) choices
+          return r
+        False -> logError' $ "the player " ++ pp actingPlayer ++ " is not allowed to take an action"
 
     logError' :: String -> InnerMoveType s a
     logError' error = do
       lift . W.tell $ clog error
       E.throwE $ T.pack error
 
-    applyTurn :: BoardC board =>
-                 board -> Turn board -> InnerMoveType board board
-    applyTurn b0 turn = do
-      when (hasWinner b0) $
-        logError' $ "game already over"
-      let currentPlayer = getCurrentPlayer' b0
-      let actingPlayer  = getActingPlayer turn
-      (lift . lift . S.modify) (\ (G g) -> G $ turn : g)
-      case currentPlayer == actingPlayer of
-        True -> runTurn turn b0
-        False -> logError' $ "the player " ++ pp actingPlayer ++ " is not allowed to take an action"
-
 --------------------------------------------------------------------------------
 -- ** related helper
 
 extractLog :: PlayResult board -> Log
 extractLog ((_,log),_) = log
+
+extractGame :: PlayResult board -> Game board
+extractGame (_, g) = g
 
 extractBoard :: PlayResult board -> Maybe board
 extractBoard ((Right board,_),_) = Just board

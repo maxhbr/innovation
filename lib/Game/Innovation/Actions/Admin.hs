@@ -2,10 +2,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Game.Innovation.Actions.Admin
-    ( Init (..)
-    , Shuffle (..)
-    , DrawDominations (..)
-    , AddPlayer (..)
+    ( AddPlayer (..)
     , StartGame (..)
     ) where
 
@@ -24,88 +21,90 @@ import           Control.Monad.Trans.Except (ExceptT)
 import qualified Control.Monad.Trans.Except as E
 import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
-import           Control.Lens
+import qualified Control.Lens as L
 
 import           Game.MetaGame
 import           Game.Innovation.Types
-import           Game.Innovation.TypesLenses
+import qualified Game.Innovation.TypesLenses as L
 import           Game.Innovation.Cards
 import           Game.Innovation.Rules
+import           Game.Innovation.Actions.Basic
+
+setDeck :: Move Board
+setDeck = M $ S.modify (\board -> board{ _drawStacks=getDeck })
+
+drawDominations :: Move Board
+drawDominations = M $ do
+  ds <- S.gets ((map head) . Map.elems . (L.view L.drawStacks))
+  S.modify (\board -> board{ _dominateables=ds })
+  S.modify (\board -> board{ _drawStacks=(Map.map drop (_drawStacks board))})
+  where
+    drop [] = []
+    drop cs = tail cs
+
+shuffle :: Int -> Move Board
+shuffle seed = M $ do
+  logForMe ("Shuffle with seed [" ++ show seed ++ "]")
+    "Shuffle with seed [only visible for admin]"
+  S.modify (shuffleState seed)
+
+addPlayer :: String -> Move Board
+addPlayer playerId = M $ do
+  log ("Add player: " ++ playerId)
+  mstate <- S.gets _machineState
+  case mstate of
+    Prepare -> do
+      let newPlayer = mkPlayer playerId
+      S.modify (L.players L.%~ (newPlayer :))
+    _       -> logError "not in prepare state."
 
 --------------------------------------------------------------------------------
 -- Admin actions
 --------------------------------------------------------------------------------
-doesInSequence = undefined
-
--- | Init
-data Init = Init
-          deriving (Eq, Show, Read)
-instance ActionToken Board Init where
-  getAction Init = onlyAdminIsAllowed $
-                   mkA $ \userId -> do
-                     log "Init the board"
-                     S.modify (\board -> board{ _drawStacks=getDeck })
-
--- | Shuffle
--- create an empty game using a given seed
-data Shuffle = Shuffle Int
-             deriving (Eq, Show, Read)
-instance ActionToken Board Shuffle where
-  getAction (Shuffle seed) = onlyAdminIsAllowed $
-                             mkA $ \userId -> do
-                               logForMe ("Shuffle with seed [" ++ show seed ++ "]")
-                                 "Shuffle with seed [only visible for admin]"
-                               S.modify (shuffleState seed)
-
-data DrawDominations = DrawDominations
-                     deriving (Eq, Show, Read)
-instance ActionToken Board DrawDominations where
-  getAction DrawDominations = onlyAdminIsAllowed $
-                              mkA $ \userId -> do
-                                log "Draw dominations"
-                                S.modify id -- TODO
-
 -- | AddPlayer
 -- add an player with a given playerId to the game
 data AddPlayer = AddPlayer String
                deriving (Eq, Show, Read)
 instance ActionToken Board AddPlayer where
-  getAction (AddPlayer playerId) = onlyAdminIsAllowed $
-                                   mkA $ \userId -> do
-                                     log ("Add player: " ++ playerId)
-                                     state <- S.get
-                                     case view machineState state of
-                                       Prepare -> do
-                                         let newPlayer = mkPlayer playerId
-                                         S.modify (const (players %~ (newPlayer :) $
-                                                          state))
-                                       _       -> logError "not in prepare state."
+  isAllowedFor (AddPlayer _) Admin = do
+    state <- getMachineState
+    return $ state == Prepare
+  isAllowedFor _ _ = return False
+
+  getAction (AddPlayer newPlayerId) = onlyAdminIsAllowed $
+                                      A $ const $ addPlayer newPlayerId
 
 -- | StartGame
 -- finish preperations of the game
 data StartGame = StartGame Int
                deriving (Eq, Show, Read)
 instance ActionToken Board StartGame where
+  isAllowedFor (StartGame _) Admin = do
+    state <- getMachineState
+    return $ state == Prepare
+  isAllowedFor _ _ = return False
+
   getAction (StartGame seed) = onlyAdminIsAllowed $
                                A $ \userId ->
-    (turnToMove $ userId `does` Shuffle seed) <>
-    (turnToMove $ userId `does` DrawDominations) <>
+    setDeck <>
+    shuffle seed <>
+    drawDominations <>
     (M ( do
             log "Start game"
-            ps <- use players
-            if length ps >= 2 && length ps <=4
+            ps <- L.use L.players
+            if length ps >= 2 && length ps <= 4
               then do
-              -- Ask for first card
-              S.modify id -- TODO
+              mapM_ (unpackMove . unpackAction (drawNOfAnd 2 Age1) . getUId) ps
+              logTODO "ask players for their first card"
               else logError "Numer of players is not valid"
        )) <>
     -- ... wait..
     (M ( do
             -- play chosen cards
             -- determine starting player
-            ps <- use players
-            playerOrder .= map getUId ps -- FALSE!
-            machineState .= WaitForTurn
+            ps <- L.use L.players
+            L.playerOrder L..= map getUId ps -- FALSE!
+            L.machineState L..= WaitForTurn
        ))
 
 data DropPlayer = DropPlayer UserId

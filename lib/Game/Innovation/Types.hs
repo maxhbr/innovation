@@ -96,6 +96,7 @@ data Card
          , _age         :: Age
          , _productions :: Productions
          , _dogmas      :: [Dogma] }
+  -- | SpecialAchievement {...}
   deriving (Show)
 
 data CardId = CardId { unpackCardId :: String }
@@ -140,7 +141,7 @@ data SplayState
   | SplayedUp
   | NotSplayed
   deriving (Eq,Show,Enum,Bounded)
-           
+
 instance PrettyPrint SplayState where
   pp = show
 
@@ -229,8 +230,11 @@ instance PrettyPrint Board where
          ++ concatMap pp (_players b)
 
 does :: ActionToken Board actionToken =>
-        UserId -> actionToken -> Turn Board
+        UserId -> actionToken -> HistoryItem Board
 does = does' (Proxy :: Proxy Board)
+
+getMachineState :: MoveWR Board MachineState
+getMachineState = M $ S.gets _machineState
 
 --------------------------------------------------------------------------------
 -- Generators

@@ -126,12 +126,20 @@ score :: [Card] -> Action Board
 score cards = mkA $ \userId ->
   modifyPlayer userId $ L.over L.influence (cards ++)
 
-dominate :: Age -> Stack -> (Maybe Card, Stack)
-dominate age = dominate' []
-  where
-    dominate' scanned []                     = (Nothing, scanned)
-    dominate' scanned (c:cs) | _age c == age = (Just c, scanned ++ cs)
-                             | otherwise     = dominate' (c:scanned) cs
+dominateAge :: Age -> Action Board
+dominateAge age = mkA $ \userId -> let
+  dominateAge' :: Stack -> Stack -> (Maybe Card, Stack)
+  dominateAge' scanned []                     = (Nothing, scanned)
+  dominateAge' scanned (c:cs) | _age c == age = (Just c, scanned ++ cs)
+                              | otherwise     = dominateAge' (c:scanned) cs
+  in do
+  (mc, ds) <- S.gets ((dominateAge' []) . (L.view L.dominateables))
+  case mc of
+    Just card -> do
+      log ("dominate age " ++ pp age)
+      S.modify $ \b -> b { _dominateables=ds }
+      modifyPlayer userId $ L.over L.dominations (card :)
+    Nothing   -> logError $ "there is no card of age " ++ pp age ++ " to be dominated"
 
 -- --------------------------------------------------------------------------------
 -- -- | Draw an card and put it into an temporary stack
@@ -187,8 +195,9 @@ instance ActionToken Board Play where
 data Dominate = Dominate Age
               deriving (Eq, Read, Show)
 instance ActionToken Board Dominate where
-  getAction (Dominate age) = mkA $ \userId ->
-    undefined
+  getAction (Dominate age) = mkA $ \userId -> do
+    logTODO "check prerequisits"
+    userId `takes` dominateAge age
 
 --------------------------------------------------------------------------------
 -- | Activate

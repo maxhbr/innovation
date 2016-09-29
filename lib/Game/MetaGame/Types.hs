@@ -17,6 +17,8 @@ module Game.MetaGame.Types
        , ActionToken (..), unpackToken
        , Turn (..), does', runTurn
        , turnToMove
+       , Choice (..)
+       , HistoryItem (..), History (..)
        , Game (..), mkG, (<=>)
        )
        where
@@ -238,7 +240,7 @@ instance BoardC board =>
 instance BoardC board =>
          Monad (ActionWR board) where
   return t    = A $ const $ return t
-  (A t) >>= f = A $ \userId -> (t userId) >>= ((\f -> f userId) . unpackAction . f)
+  (A t) >>= f = A $ \userId -> t userId >>= ((\f -> f userId) . unpackAction . f)
 
 
 takes :: BoardC board =>
@@ -255,10 +257,16 @@ takes uid act = unpackMove (unpackAction act uid)
 class (BoardC board, Eq actionToken, Read actionToken, Show actionToken) =>
       ActionToken board actionToken where
   getAction :: actionToken -> Action board
+  isAllowedFor :: actionToken -> UserId -> MoveWR board Bool
+  isAllowedFor _ _ = return True
 
 unpackToken :: ActionToken board actionToken =>
                actionToken -> UserId -> MoveWR board ()
-unpackToken = unpackAction . getAction
+unpackToken token userId = do
+  b <- isAllowedFor token userId
+  if b
+    then unpackAction (getAction token) userId
+    else M $ lift . E.throwE . T.pack $ "user " ++ pp userId ++ " is not allowed to " ++ show token
 
 --------------------------------------------------------------------------------
 -- ** Turns
@@ -269,12 +277,6 @@ data Turn board = forall actionToken.
                   ActionToken board actionToken =>
                   Turn { getActingPlayer :: UserId
                        , getActionToken :: actionToken }
-                -- | Choice { getChoosingPlayer :: UserId
-                --          , getChoice :: undefined}
-
-does' :: ActionToken board actionToken =>
-         Proxy board -> UserId -> actionToken -> Turn board
-does' _ = Turn
 
 instance Show (Turn board) where
   show (Turn Admin actionToken)      = show actionToken
@@ -299,18 +301,35 @@ runTurn turn b0 = do
   return $ advancePlayerOrder b1
 
 --------------------------------------------------------------------------------
+-- ** Choices
+
+data Choice
+
+--------------------------------------------------------------------------------
 -- ** Game
+
+data  HistoryItem board = HTurn (Turn board)
+                        | HChoice Choice
+instance Show (HistoryItem board) where
+  show (HTurn t)   = show t
+  show (HChoice _) = "some choice" -- TODO
+
+type History board = [HistoryItem board]
+
+does' :: ActionToken board actionToken =>
+         Proxy board -> UserId -> actionToken -> HistoryItem board
+does' _ uid t = HTurn $ Turn uid t
 
 -- | A game consists of all the turns, i.e. taken actions, in chronological order
 -- the last taken action is the head
-newtype Game board = G [Turn board]
+newtype Game board = G (History board)
                    deriving (Show)
 
-mkG :: [Turn board] -> Game board
+mkG :: [HistoryItem board] -> Game board
 mkG = G . reverse
 
-(<=>) :: Game board -> Turn board -> Game board
-(G g) <=> t = G $ t:g
+(<=>) :: Game board -> HistoryItem board -> Game board
+(G g) <=> hi = G $ hi:g
 
 instance Monoid (Game board) where
   mempty                = G []
