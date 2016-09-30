@@ -34,14 +34,14 @@ log :: BoardC s =>
        String -> MoveType s ()
 log text = do
     loggingUser <- getCurrentPlayer
-    lift . log' $
+    lift . lift . log' $
       pp loggingUser ++ ": " ++ text
 
 logForMe :: BoardC s =>
             String -> String -> MoveType s ()
 logForMe textPrivate textPublic = do
     loggingUser <- getCurrentPlayer
-    lift . lift . W.tell . Log $
+    lift . lift . lift . W.tell . Log $
       \user -> T.pack $
                ((pp loggingUser ++ ": ") ++) $
                if user == loggingUser || user == Admin
@@ -51,7 +51,7 @@ logForMe textPrivate textPublic = do
 -- | logWarn prints a warning to the log
 logWarn :: BoardC s =>
             String -> MoveType s ()
-logWarn = lift . innerLogWarn
+logWarn = lift . lift . innerLogWarn
 
 innerLogWarn :: BoardC s =>
                  String -> InnerMoveType s ()
@@ -61,7 +61,7 @@ innerLogWarn warn = log' $ "Warning: " ++ warn
 -- this ends the game
 logError :: BoardC s =>
             String -> MoveType s a
-logError = lift . innerLogError
+logError = lift . lift . innerLogError
 
 innerLogError :: BoardC s =>
                  String -> InnerMoveType s a
@@ -73,7 +73,7 @@ innerLogError error = do
 -- this ends the game
 logFatal :: BoardC s =>
             String -> MoveType s a
-logFatal = lift . innerLogFatal
+logFatal = lift . lift . innerLogFatal
 
 innerLogFatal :: BoardC s =>
                  String -> InnerMoveType s a
@@ -85,7 +85,7 @@ innerLogFatal fatal = do
 -- this ends the game
 logTODO :: BoardC s =>
            String -> MoveType s a
-logTODO = lift . innerLogTODO
+logTODO = lift . lift . innerLogTODO
 
 innerLogTODO :: BoardC s =>
            String -> InnerMoveType s a

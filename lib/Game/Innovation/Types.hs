@@ -230,7 +230,7 @@ instance PrettyPrint Board where
          ++ concatMap pp (_players b)
 
 does :: ActionToken Board actionToken =>
-        UserId -> actionToken -> HistoryItem Board
+        UserId -> actionToken -> Turn Board
 does = does' (Proxy :: Proxy Board)
 
 getMachineState :: MoveWR Board MachineState

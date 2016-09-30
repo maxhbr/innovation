@@ -19,6 +19,20 @@ import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
 
 import           Game.MetaGame.Types
+import           Game.MetaGame.Helper
+
+
+-- | run a turn on a board
+-- this also advances the player order, i.e. consumes an 'action'
+runTurn :: BoardC board =>
+           Turn board -> board -> InnerMoveType board board
+runTurn (Turn userId actionToken choices) b0 = do
+  ((_, b1), restChoices) <- runOuterMoveType b0 choices ( unpackMove
+                                                          ( unpackToken actionToken userId ) )
+  unless (restChoices == []) $
+    innerLogError "not all choices were cosumed"
+  -- TODO: produce message, who is next and what is to do
+  return $ advancePlayerOrder b1
 
 --------------------------------------------------------------------------------
 -- * play
@@ -29,25 +43,18 @@ type PlayResult board = InnerMoveResult board board
 -- | one is able to play a game
 play :: BoardC board =>
         Game board -> PlayResult board
-play (G history)= (runInnerMoveType . play') (accumulateChoices history)
+play (G history)= (runInnerMoveType . play' . reverse) history
   where
-    accumulateChoices :: History board -> [(Turn board, [Choice])]
-    accumulateChoices = reverse . accumulateChoices' []
-      where
-        accumulateChoices' :: [Choice] -> History board -> [(Turn board, [Choice])]
-        accumulateChoices' cs ((HChoice c):hs) = accumulateChoices' (c:cs) hs
-        accumulateChoices' cs ((HTurn t):hs)   = (t, cs) : accumulateChoices' [] hs
-        accumulateChoices' _  []               = [] -- drop trailing choices
 
     play' :: BoardC board =>
-             [(Turn board, [Choice])] -> InnerMoveType board board
+             [Turn board] -> InnerMoveType board board
     play' = foldM applyTurn emptyBoard
 
     applyTurn :: BoardC board =>
-                 board -> (Turn board, [Choice]) -> InnerMoveType board board
-    applyTurn b0 (turn, choices) = do
+                 board -> Turn board -> InnerMoveType board board
+    applyTurn b0 turn = do
       when (hasWinner b0) $
-        logError' $ "game already over"
+        innerLogError $ "game already over"
 
       let currentPlayer = getCurrentPlayer' b0
       let actingPlayer  = getActingPlayer turn
@@ -56,15 +63,9 @@ play (G history)= (runInnerMoveType . play') (accumulateChoices history)
         True -> do
           r <- runTurn turn b0
           --  this drops all choices incl. action if only one is invalid?
-          (lift . lift . S.modify) (\ (G g) -> G $ HTurn turn : g)
-          mapM_ (\c -> (lift . lift . S.modify) (\ (G g) -> G $ HChoice c : g)) choices
+          (lift . lift . W.tell) (G [turn])
           return r
-        False -> logError' $ "the player " ++ pp actingPlayer ++ " is not allowed to take an action"
-
-    logError' :: String -> InnerMoveType s a
-    logError' error = do
-      lift . W.tell $ clog error
-      E.throwE $ T.pack error
+        False -> innerLogError $ "the player " ++ pp actingPlayer ++ " is not allowed to take an action"
 
 --------------------------------------------------------------------------------
 -- ** related helper

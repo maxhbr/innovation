@@ -11,14 +11,13 @@ module Game.MetaGame.Types
        , BoardC (..), GameResult (..)
        , Log (..), clog, viewLog
        , InnerMoveType, InnerMoveResult, runInnerMoveType
+       , OuterMoveResult, runOuterMoveType
        , MoveType, MoveResult, runMoveType
        , MoveWR (..), Move (..)
        , ActionWR (..), Action (..), takes
        , ActionToken (..), unpackToken
-       , Turn (..), does', runTurn
-       , turnToMove
+       , Turn (..), does'
        , Choice (..)
-       , HistoryItem (..), History (..)
        , Game (..), mkG, (<=>)
        )
        where
@@ -33,11 +32,11 @@ import           Data.Monoid
 import           Control.Monad
 import           Control.Monad.Identity
 import           Control.Monad.Trans.Class
-import           Control.Monad.Trans.Writer (WriterT)
+import           Control.Monad.Trans.Writer (Writer, WriterT)
 import qualified Control.Monad.Trans.Writer as W
 import           Control.Monad.Trans.Except (ExceptT)
 import qualified Control.Monad.Trans.Except as E
-import           Control.Monad.Trans.State.Lazy (State, StateT)
+import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
 
@@ -147,8 +146,8 @@ instance Monoid Log where
 -- | The type of an move
 type InnerMoveType board = ExceptT Text -- ^ uses ExceptT to communicate failures
                            ( WriterT Log -- ^ uses WriterT to log
-                                     ( State (Game board) -- ^ the history of the game
-                                     )
+                             ( Writer (Game board) -- ^ the history of the game
+                             )
                            )
 
 -- | the result of a move is the resulting state together with a bunch of metadata
@@ -157,29 +156,36 @@ type InnerMoveResult board r = ( ( Either Text -- ^ this maybe contains the erro
                                  , Log ) -- ^ this contains the log
                                , Game board ) -- ^ the history of the game
 
-runInnerMoveType :: BoardC board =>
-                    InnerMoveType board a -> InnerMoveResult board a
-runInnerMoveType imt = (S.runState .
+runInnerMoveType :: InnerMoveType board a -> InnerMoveResult board a
+runInnerMoveType imt = (W.runWriter .
                         W.runWriterT .
-                        E.runExceptT ) imt (G [])
+                        E.runExceptT ) imt
 
 -- | The type of an move
 type MoveType board = StateT board -- ^ uses StateT to handle the state of the board as 'board'
-                      ( InnerMoveType board )
+                      ( StateT [Choice] -- ^ a list of choices to consume
+                        ( InnerMoveType board
+                        )
+                      )
+
+type OuterMoveResult board r = ( ( r -- ^ this is the calculated result
+                                 , board ) -- ^ this is the state of the board at the end of the calculation
+                               , [Choice] ) -- ^ this are the unconsumed choices
 
 -- | the result of a move is the resulting state together with a bunch of metadata
 type MoveResult board r = ( ( Either Text -- ^ this maybe contains the error text
-                                     ( r -- ^ this is the calculated result
-                                     , board ) -- ^ this is the state of the board at the end of the calculation
+                                     ( OuterMoveResult board r)
                             , Log ) -- ^ this contains the log
                           , Game board ) -- ^ the history of the game
 
+runOuterMoveType :: board -> [Choice] -> MoveType board r -> InnerMoveType board (OuterMoveResult board r)
+runOuterMoveType b0 cs move = S.runStateT
+                              ( S.runStateT move b0 )
+                              cs
+
 -- | Something of MoveType can be applied to an inital board state
-runMoveType :: board -> MoveType board a -> MoveResult board a
-runMoveType initial move = (S.runState .
-                            W.runWriterT .
-                            E.runExceptT .
-                            S.runStateT move) initial (G [])
+runMoveType :: board -> [Choice] -> MoveType board a -> MoveResult board a
+runMoveType b0 cs = runInnerMoveType . (runOuterMoveType b0 cs)
 
 -- | The wrapper for a move
 -- a 'MoveWR' is a 'Move' which returns something
@@ -266,7 +272,13 @@ unpackToken token userId = do
   b <- isAllowedFor token userId
   if b
     then unpackAction (getAction token) userId
-    else M $ lift . E.throwE . T.pack $ "user " ++ pp userId ++ " is not allowed to " ++ show token
+    else M $ lift . lift . E.throwE . T.pack $ "user " ++ pp userId ++ " is not allowed to " ++ show token
+
+--------------------------------------------------------------------------------
+-- ** Choices
+
+data Choice = Choice { choosingPlayer :: UserId }
+            deriving (Show, Eq)
 
 --------------------------------------------------------------------------------
 -- ** Turns
@@ -276,60 +288,40 @@ unpackToken token userId = do
 data Turn board = forall actionToken.
                   ActionToken board actionToken =>
                   Turn { getActingPlayer :: UserId
-                       , getActionToken :: actionToken }
+                       , getActionToken :: actionToken
+                       , choices :: [Choice]}
 
 instance Show (Turn board) where
-  show (Turn Admin actionToken)      = show actionToken
-  show (Turn (U userId) actionToken) = userId ++ ": " ++ show actionToken
+  show (Turn Admin actionToken choices)      = show actionToken ++ (show choices)
+  show (Turn (U userId) actionToken choices) = userId ++ ": " ++ show actionToken ++ (show choices)
 
 -- | The `Eq` instance of `Action board` is deriven from the `Show` instance
 instance Eq (Turn board) where
   turn1 == turn2 = getActingPlayer turn1 == getActingPlayer turn2
                    && show turn1 == show turn2
 
--- *** related helper
--- | redeem the described Move from an turn
-turnToMove :: Turn board -> Move board
-turnToMove (Turn userId actionToken) = unpackToken actionToken userId
+does' :: ActionToken board actionToken =>
+         Proxy board -> UserId -> actionToken -> Turn board
+does' _ uid t = Turn uid t []
 
--- | run a turn on a board
--- this also advances the player order, i.e. consumes an 'action'
-runTurn :: BoardC board =>
-           Turn board -> board -> InnerMoveType board board
-runTurn turn b0 = do
-  (_, b1) <- S.runStateT (unpackMove (turnToMove turn)) b0
-  return $ advancePlayerOrder b1
-
---------------------------------------------------------------------------------
--- ** Choices
-
-data Choice
+chooses' :: Proxy board -> UserId -> (UserId -> Choice) -> Turn board -> Turn board
+chooses' _ uid c = \t -> t{ choices=(c uid : choices t) }
 
 --------------------------------------------------------------------------------
 -- ** Game
 
-data  HistoryItem board = HTurn (Turn board)
-                        | HChoice Choice
-instance Show (HistoryItem board) where
-  show (HTurn t)   = show t
-  show (HChoice _) = "some choice" -- TODO
-
-type History board = [HistoryItem board]
-
-does' :: ActionToken board actionToken =>
-         Proxy board -> UserId -> actionToken -> HistoryItem board
-does' _ uid t = HTurn $ Turn uid t
+type History board = [Turn board]
 
 -- | A game consists of all the turns, i.e. taken actions, in chronological order
 -- the last taken action is the head
 newtype Game board = G (History board)
                    deriving (Show)
 
-mkG :: [HistoryItem board] -> Game board
+mkG :: [Turn board] -> Game board
 mkG = G . reverse
 
-(<=>) :: Game board -> HistoryItem board -> Game board
-(G g) <=> hi = G $ hi:g
+(<=>) :: Game board -> Turn board -> Game board
+(G g) <=> t = G $ t:g
 
 instance Monoid (Game board) where
   mempty                = G []
