@@ -21,18 +21,39 @@ import qualified Control.Lens as L
 import           Game.MetaGame.Types
 import           Game.MetaGame.Helper
 
+unpackToken :: ActionToken board actionToken =>
+               actionToken -> UserId -> MoveWR board ()
+unpackToken token userId = do
+  b <- isAllowedFor token userId
+  if b
+    then unpackAction (getAction token) userId
+    else M . logError $ "user " ++ pp userId ++ " is not allowed to " ++ show token
 
 -- | run a turn on a board
 -- this also advances the player order, i.e. consumes an 'action'
 runTurn :: BoardC board =>
-           Turn board -> board -> InnerMoveType board board
-runTurn (Turn userId actionToken choices) b0 = do
-  ((_, b1), restChoices) <- runOuterMoveType b0 choices ( unpackMove
-                                                          ( unpackToken actionToken userId ) )
-  unless (restChoices == []) $
-    innerLogError "not all choices were cosumed"
-  -- TODO: produce message, who is next and what is to do
-  return $ advancePlayerOrder b1
+            board -> Turn board ->InnerMoveType board board
+runTurn b0 turn@(Turn userId actionToken choices) = do
+  case (getMachineState' b0) of
+    Prepare -> unless (userId == Admin) $
+                 innerLogError "only admin is allowed to take turns in the prepare phase"
+    WaitForTurn -> unless (getCurrentPlayer' b0 == userId) $
+                     innerLogError $ "the player " ++ pp userId ++ " is not allowed to take an action"
+    WaitForChoice _ -> innerLogError "still waiting for answers"
+    GameOver _ -> innerLogError "game already over"
+
+  let move = unpackMove (unpackToken actionToken userId)
+
+  result <- runOuterMoveType b0 choices move
+  case result of
+    Left b1 -> do -- ^ Turn not yet completed
+      return b1
+    Right ((_, b1), unconsumedChoices) -> do -- ^ Turn completed
+      unless (null unconsumedChoices) $
+        innerLogError "not all choices were cosumed"
+
+      (lift . lift . W.tell) (G [turn])
+      return $ advancePlayerOrder b1
 
 --------------------------------------------------------------------------------
 -- * play
@@ -43,29 +64,7 @@ type PlayResult board = InnerMoveResult board board
 -- | one is able to play a game
 play :: BoardC board =>
         Game board -> PlayResult board
-play (G history)= (runInnerMoveType . play' . reverse) history
-  where
-
-    play' :: BoardC board =>
-             [Turn board] -> InnerMoveType board board
-    play' = foldM applyTurn emptyBoard
-
-    applyTurn :: BoardC board =>
-                 board -> Turn board -> InnerMoveType board board
-    applyTurn b0 turn = do
-      when (hasWinner b0) $
-        innerLogError $ "game already over"
-
-      let currentPlayer = getCurrentPlayer' b0
-      let actingPlayer  = getActingPlayer turn
-
-      case currentPlayer == actingPlayer of
-        True -> do
-          r <- runTurn turn b0
-          --  this drops all choices incl. action if only one is invalid?
-          (lift . lift . W.tell) (G [turn])
-          return r
-        False -> innerLogError $ "the player " ++ pp actingPlayer ++ " is not allowed to take an action"
+play (G history)= (runInnerMoveType . foldM runTurn emptyBoard . reverse) history
 
 --------------------------------------------------------------------------------
 -- ** related helper
@@ -80,8 +79,8 @@ extractBoard :: PlayResult board -> Maybe board
 extractBoard ((Right board,_),_) = Just board
 extractBoard _                   = Nothing
 
-extractGameResult :: BoardC board =>
-                     PlayResult board -> GameResult
-extractGameResult r = case extractBoard r of
-  Just b -> getGameResult b
-  _      -> NoWinner
+extractWinner :: BoardC board =>
+                     PlayResult board -> Maybe UserId
+extractWinner r = case extractBoard r of
+  Just b -> getWinner b
+  _      -> Nothing

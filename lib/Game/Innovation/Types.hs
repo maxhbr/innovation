@@ -172,19 +172,6 @@ instance PrettyPrint Player where
 -- Game state
 --------------------------------------------------------------------------------
 
--- data Choice = HasToChoose UserId Selector
---             | HasChosen UserId Selector
---             deriving (Eq, Show)
-
-data MachineState
-  = Prepare
-  | WaitForTurn
-  -- | WaitForChoices [Choice]
-  | FinishedGame GameResult
-  deriving (Eq, Show)
-instance PrettyPrint MachineState where
-  pp = show
-
 type PlayerOrder = [UserId]
 
 data Board = Board { _machineState  :: MachineState -- ^ The internal state of the underlying machine
@@ -198,10 +185,13 @@ data Board = Board { _machineState  :: MachineState -- ^ The internal state of t
 instance BoardC Board where
   emptyBoard = Board Prepare Map.empty [] [] []
 
-  getCurrentPlayer' Board{ _machineState= (FinishedGame _)} = Admin
-  getCurrentPlayer' Board{ _machineState= Prepare}          = Admin
-  getCurrentPlayer' Board{ _playerOrder=[] }                = Admin
-  getCurrentPlayer' Board{ _playerOrder=order }             = head order
+  getMachineState' = _machineState
+
+  getCurrentPlayer' Board{ _machineState=(GameOver _)}     = Admin
+  getCurrentPlayer' Board{ _machineState=WaitForChoice cs} = askedPlayer cs
+  getCurrentPlayer' Board{ _machineState=Prepare}          = Admin
+  getCurrentPlayer' Board{ _playerOrder=[] }               = Admin
+  getCurrentPlayer' Board{ _playerOrder=order }            = head order
 
   advancePlayerOrder b@Board{ _playerOrder = ps } = b{ _playerOrder = (advancePlayerOrder' ps) }
     where
@@ -216,12 +206,6 @@ instance BoardC Board where
       doSpecialAchievments = id -- TODO
       determineWinner = id -- TODO
 
-  getGameResult board = let
-    ms = _machineState board
-    in case ms of
-      FinishedGame gr -> gr
-      _               -> NoWinner
-
 instance PrettyPrint Board where
   pp b = (replicate 60 '=') ++ "\n"
          ++ "Board at " ++ pp (_machineState b) ++ " and current player is " ++ pp (getCurrentPlayer' b) ++ ":\n"
@@ -230,11 +214,19 @@ instance PrettyPrint Board where
          ++ concatMap pp (_players b)
 
 does :: ActionToken Board actionToken =>
-        UserId -> actionToken -> Turn Board
+        UserId -> actionToken -> UserInput Board
 does = does' (Proxy :: Proxy Board)
 
-getMachineState :: MoveWR Board MachineState
-getMachineState = M $ S.gets _machineState
+chooses :: UserId -> (UserId -> Answer) -> UserInput Board
+chooses = chooses' (Proxy :: Proxy Board)
+
+-- | possible answer (Yes)
+toPlayMaybe :: UserId -> Answer
+toPlayMaybe = answerYes
+
+-- | possible answer (No)
+notToPlayMaybe :: UserId -> Answer
+notToPlayMaybe = answerNo
 
 --------------------------------------------------------------------------------
 -- Generators

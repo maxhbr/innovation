@@ -8,19 +8,21 @@ module Game.MetaGame.Types
        ( PrettyPrint (..)
        , UserId (..), mkUserId, isAdmin
        , PlayerC (..)
-       , BoardC (..), GameResult (..)
+       , Inquiry (..), Answer (..)
+       , BoardC (..), MachineState (..)
        , Log (..), clog, viewLog
        , InnerMoveType, InnerMoveResult, runInnerMoveType
        , OuterMoveResult, runOuterMoveType
        , MoveType, MoveResult, runMoveType
        , MoveWR (..), Move (..)
        , ActionWR (..), Action (..), takes
-       , ActionToken (..), unpackToken
-       , Turn (..), does'
-       , Choice (..)
-       , Game (..), mkG, (<=>)
-       )
-       where
+       , ActionToken (..)
+       , Turn (..)
+       , Game (..)
+       , UserInput (..)
+       , does', chooses', answerYes, answerNo
+       , mkG, (<=>)
+       ) where
 
 import           Prelude hiding (log)
 import           Data.Proxy
@@ -84,20 +86,72 @@ class PlayerC player where
   hasEqualUId player1 player2 = player1 `hasUId` getUId player2
 
 --------------------------------------------------------------------------------
+-- ** Choices
+-- While evaluating a turn, there might be the point where user input by an
+-- specific user is required. This question is represented by an 'Inquiry'.
+-- This can be answerd by something of the type 'Choice'.
+
+data Inquiry a
+  = Inquiry { askedPlayer :: UserId -- ^ the user asked to answer the question
+            , inquiryQuestion :: String -- ^ the verbal version of the question
+            , inquiryOptions :: [a] -- ^ possible options to choose from
+            , checkConfigurationValiadity :: [Int] -> Bool } -- ^ restrictions to the possible answers (programatically)
+
+instance Eq a =>
+         Eq (Inquiry a) where
+  (Inquiry ap1 iq1 io1 _) == (Inquiry ap2 iq2 io2 _) = iq1 == iq2
+                                                    && io1 == io2
+                                                    && ap1 == ap2
+
+instance Show a =>
+         Show (Inquiry a) where
+  show (Inquiry ap iq _ _) = iq ++ " <- " ++ pp ap
+
+data Answer
+  = Answer { answeringPlayer :: UserId -- ^ the user answering the inquiry
+           , answer :: [Int] } -- ^ choose options by their indices (starting with 0)
+                               -- '[]' means "No" for boolean questions, '[0]' is "Yes"
+  deriving (Show, Eq)
+
+--------------------------------------------------------------------------------
 -- ** State
 
-data GameResult = NoWinner
-                | Winner UserId
-                deriving (Show,Eq,Read)
+data MachineState
+  = Prepare -- ^ the game has not yet been started and only 'Admin' should take actions
+  | WaitForTurn -- ^ last turn was done completly and current player should choose his action
+  | forall a.
+    (Show a) =>
+    WaitForChoice (Inquiry a) -- ^ current turn requires more imput, which needs to be provided by some user
+  | GameOver UserId -- ^ there was already an game ending situation and mentioned user has won, nothing should be able to change the current board
+  -- deriving (Show)
+
+instance Eq MachineState where
+  Prepare           == Prepare           = True
+  WaitForTurn       == WaitForTurn       = True
+  (WaitForChoice _) == (WaitForChoice _) = True
+  (GameOver gr1)    == (GameOver gr2)    = gr1 == gr2
+  _                 == _                 = False
+
+instance Show MachineState where
+  show Prepare           = "Prepare"
+  show WaitForTurn       = "WaitForTurn"
+  show (WaitForChoice _) = "WaitForChoice: " ++ "?"
+  show (GameOver winner) = "GameOver: " ++ (show winner) ++ " has won"
+
+instance PrettyPrint MachineState where
+  pp = show
 
 class BoardC board where
   emptyBoard :: board
 
-  -- | get the player, which is expected to act next
+  -- | metainformation on the state of the board
+  getMachineState' :: board -> MachineState
+
+  -- | get the player, which is expected to act next (take a turn, give an answer, ...)
   -- if another user is acting, the game fails
   getCurrentPlayer' :: board -> UserId
 
-  -- | the current player is done with its action
+  -- | the current turn is done
   advancePlayerOrder :: board -> board
 
   -- | atomic update
@@ -107,13 +161,16 @@ class BoardC board where
 
   -- | unpack the currently known result from the board
   -- If there is a winner, the board should know about it
-  getGameResult :: board -> GameResult
+  getWinner :: board -> Maybe UserId
+  getWinner b = case getMachineState' b of
+    GameOver winner -> Just winner
+    _               -> Nothing
 
   -- | determine whether the game has already a winner and thus is ended
   hasWinner :: board -> Bool
-  hasWinner board = case getGameResult board of
-    NoWinner -> False
-    Winner _ -> True
+  hasWinner board = case getWinner board of
+    Just _ -> True
+    Nothing -> False
 
 --------------------------------------------------------------------------------
 -- ** Log
@@ -143,48 +200,43 @@ instance Monoid Log where
 -- ** Moves
 -- A move is the actual change on the board
 
--- | The type of an move
-type InnerMoveType board = ExceptT Text -- ^ uses ExceptT to communicate failures
-                           ( WriterT Log -- ^ uses WriterT to log
-                             ( Writer (Game board) -- ^ the history of the game
-                             )
-                           )
+type InnerMoveType board
+  = ExceptT Text -- ^ uses ExceptT to communicate failures
+    ( WriterT Log -- ^ uses WriterT to log
+      ( Writer ( Game board ) ) ) -- ^ the history of the game
 
--- | the result of a move is the resulting state together with a bunch of metadata
-type InnerMoveResult board r = ( ( Either Text -- ^ this maybe contains the error text
-                                           r -- ^ this is the calculated result
-                                 , Log ) -- ^ this contains the log
-                               , Game board ) -- ^ the history of the game
+type InnerMoveResult board r
+  = ( ( Either Text -- ^ this maybe contains the error text
+        r -- ^ this is the calculated result
+      , Log ) -- ^ this contains the log
+    , Game board ) -- ^ the history of the game
 
 runInnerMoveType :: InnerMoveType board a -> InnerMoveResult board a
-runInnerMoveType imt = (W.runWriter .
-                        W.runWriterT .
-                        E.runExceptT ) imt
+runInnerMoveType = W.runWriter . W.runWriterT . E.runExceptT
 
--- | The type of an move
-type MoveType board = StateT board -- ^ uses StateT to handle the state of the board as 'board'
-                      ( StateT [Choice] -- ^ a list of choices to consume
-                        ( InnerMoveType board
-                        )
-                      )
+type MoveType board
+  = StateT board -- ^ uses StateT to handle the state of the board as 'board'
+    ( StateT [Answer] -- ^ a list of answers to consume (maybe implement via ReaderT)
+      ( ExceptT board -- ^ the current turn could not be finished (some user input was missing)
+        ( InnerMoveType board ) ) )
 
-type OuterMoveResult board r = ( ( r -- ^ this is the calculated result
-                                 , board ) -- ^ this is the state of the board at the end of the calculation
-                               , [Choice] ) -- ^ this are the unconsumed choices
+type OuterMoveResult board r
+  = Either board -- ^ this is the fast way out, without ending the turn
+                 -- the board should be in state 'WaitForChoice' or 'GameOver'
+    ( ( r -- ^ this is the calculated result
+      , board ) -- ^ this is the state of the board at the end of the calculation
+    , [Answer] ) -- ^ this are the unconsumed answers
 
--- | the result of a move is the resulting state together with a bunch of metadata
-type MoveResult board r = ( ( Either Text -- ^ this maybe contains the error text
-                                     ( OuterMoveResult board r)
-                            , Log ) -- ^ this contains the log
-                          , Game board ) -- ^ the history of the game
+type MoveResult board r = InnerMoveResult board (OuterMoveResult board r)
 
-runOuterMoveType :: board -> [Choice] -> MoveType board r -> InnerMoveType board (OuterMoveResult board r)
-runOuterMoveType b0 cs move = S.runStateT
-                              ( S.runStateT move b0 )
-                              cs
+runOuterMoveType :: board -> [Answer] -> MoveType board r -> InnerMoveType board (OuterMoveResult board r)
+runOuterMoveType b0 as move = E.runExceptT
+                              ( S.runStateT
+                                ( S.runStateT move b0 )
+                                as )
 
 -- | Something of MoveType can be applied to an inital board state
-runMoveType :: board -> [Choice] -> MoveType board a -> MoveResult board a
+runMoveType :: board -> [Answer] -> MoveType board a -> MoveResult board a
 runMoveType b0 cs = runInnerMoveType . (runOuterMoveType b0 cs)
 
 -- | The wrapper for a move
@@ -266,30 +318,17 @@ class (BoardC board, Eq actionToken, Read actionToken, Show actionToken) =>
   isAllowedFor :: actionToken -> UserId -> MoveWR board Bool
   isAllowedFor _ _ = return True
 
-unpackToken :: ActionToken board actionToken =>
-               actionToken -> UserId -> MoveWR board ()
-unpackToken token userId = do
-  b <- isAllowedFor token userId
-  if b
-    then unpackAction (getAction token) userId
-    else M $ lift . lift . E.throwE . T.pack $ "user " ++ pp userId ++ " is not allowed to " ++ show token
-
---------------------------------------------------------------------------------
--- ** Choices
-
-data Choice = Choice { choosingPlayer :: UserId }
-            deriving (Show, Eq)
-
 --------------------------------------------------------------------------------
 -- ** Turns
 -- A turn is the choice of an action, taken by an player
 
 -- | A turn is a action which is taken by some player
+-- TODO: Might be better called 'Action' since "one has two actions per turn"
 data Turn board = forall actionToken.
                   ActionToken board actionToken =>
                   Turn { getActingPlayer :: UserId
                        , getActionToken :: actionToken
-                       , choices :: [Choice]}
+                       , answers :: [Answer] }
 
 instance Show (Turn board) where
   show (Turn Admin actionToken choices)      = show actionToken ++ (show choices)
@@ -299,13 +338,6 @@ instance Show (Turn board) where
 instance Eq (Turn board) where
   turn1 == turn2 = getActingPlayer turn1 == getActingPlayer turn2
                    && show turn1 == show turn2
-
-does' :: ActionToken board actionToken =>
-         Proxy board -> UserId -> actionToken -> Turn board
-does' _ uid t = Turn uid t []
-
-chooses' :: Proxy board -> UserId -> (UserId -> Choice) -> Turn board -> Turn board
-chooses' _ uid c = \t -> t{ choices=(c uid : choices t) }
 
 --------------------------------------------------------------------------------
 -- ** Game
@@ -317,12 +349,40 @@ type History board = [Turn board]
 newtype Game board = G (History board)
                    deriving (Show)
 
-mkG :: [Turn board] -> Game board
-mkG = G . reverse
-
-(<=>) :: Game board -> Turn board -> Game board
-(G g) <=> t = G $ t:g
-
 instance Monoid (Game board) where
   mempty                = G []
   mappend (G g2) (G g1) = G $ mappend g1 g2
+
+--------------------------------------------------------------------------------
+-- ** mkG
+
+data UserInput board
+  = UTurn (Turn board)
+  | UChoice (Turn board -> Turn board)
+
+does' :: ActionToken board actionToken =>
+         Proxy board -> UserId -> actionToken -> UserInput board
+does' _ uid t = UTurn $ Turn uid t []
+
+chooses' :: Proxy board -> UserId -> (UserId -> Answer) -> UserInput board
+chooses' _ uid c = UChoice $ \t -> t{ answers=(c uid : answers t) }
+
+-- | possible answer (Yes)
+answerYes :: UserId -> Answer
+answerYes uid = uid `Answer` [0]
+
+-- | possible answer (No)
+answerNo :: UserId -> Answer
+answerNo uid = uid `Answer` []
+
+mkG :: [UserInput board] -> Game board
+mkG = G . accumulateInput id
+  where
+    accumulateInput :: (Turn board -> Turn board) -> [UserInput board] -> [Turn board]
+    accumulateInput cs (UChoice f : uis) = accumulateInput (f . cs) uis
+    accumulateInput cs (UTurn t : uis)   = accumulateInput id uis ++ [cs t]
+    accumulateInput _  []                = []
+
+(<=>) :: Game board -> UserInput board -> Game board
+(G (t:ts)) <=> (UChoice f) = G $ f t : ts
+(G ts)     <=> (UTurn t)   = G $ t : ts

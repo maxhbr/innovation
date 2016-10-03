@@ -67,7 +67,7 @@ data AddPlayer = AddPlayer String
                deriving (Eq, Show, Read)
 instance ActionToken Board AddPlayer where
   isAllowedFor (AddPlayer _) Admin = do
-    state <- getMachineState
+    state <- M $ getMachineState
     return $ state == Prepare
   isAllowedFor _ _ = return False
 
@@ -80,7 +80,7 @@ data StartGame = StartGame Int
                deriving (Eq, Show, Read)
 instance ActionToken Board StartGame where
   isAllowedFor (StartGame _) Admin = do
-    state <- getMachineState
+    state <- M $ getMachineState
     return $ state == Prepare
   isAllowedFor _ _ = return False
 

@@ -26,7 +26,7 @@ spec = let
     let playResult = play game
     printLog playResult
 
-    extractGameResult playResult `shouldBe` NoWinner
+    extractWinner playResult `shouldBe` Nothing 
 
     let stateM = extractBoard playResult
     isJust stateM `shouldBe` True
@@ -42,7 +42,7 @@ spec = let
     let playResult = play game
     printLog playResult
 
-    extractGameResult playResult `shouldBe` NoWinner
+    extractWinner playResult `shouldBe` Nothing
     let stateM = extractBoard playResult
     isJust stateM `shouldBe` False
 
@@ -90,6 +90,15 @@ spec = let
       (state, _) <- isSuccessfullGameWithoutWinner startedGame
       length (L.view L.players state) `shouldBe` 2
       L.view L.machineState state `shouldNotBe` Prepare
+
+    let startedGameCooseInitalCard = startedGame <>
+                                     mkG [ U "user1" `chooses` (`Answer` [1])
+                                         , U "user2" `chooses` (`Answer` [0])]
+    it "just addPlayers + StartGame + choose" $ do
+      (state, _) <- isSuccessfullGameWithoutWinner startedGameCooseInitalCard
+      length (L.view L.players state) `shouldBe` 2
+      L.view L.machineState state `shouldNotBe` Prepare
+      exactlyAllCardsArePresent state `shouldBe` True
 
     let someActionsTaken = startedGame <>
                            mkG [ U "user2" `does` Draw

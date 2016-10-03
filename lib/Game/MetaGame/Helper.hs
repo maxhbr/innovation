@@ -25,6 +25,9 @@ import Game.MetaGame.Types
 -- * helper related to 'Move' and 'MoveType'-things
 --------------------------------------------------------------------------------
 
+liftFromInner :: InnerMoveType s a -> MoveType s a
+liftFromInner = lift . lift . lift
+
 log' :: (Monad m, MonadTrans t) =>
         String -> t (WriterT Log m) ()
 log' = lift . W.tell . clog
@@ -34,14 +37,14 @@ log :: BoardC s =>
        String -> MoveType s ()
 log text = do
     loggingUser <- getCurrentPlayer
-    lift . lift . log' $
+    liftFromInner . log' $
       pp loggingUser ++ ": " ++ text
 
 logForMe :: BoardC s =>
             String -> String -> MoveType s ()
 logForMe textPrivate textPublic = do
     loggingUser <- getCurrentPlayer
-    lift . lift . lift . W.tell . Log $
+    liftFromInner . lift . W.tell . Log $
       \user -> T.pack $
                ((pp loggingUser ++ ": ") ++) $
                if user == loggingUser || user == Admin
@@ -51,7 +54,7 @@ logForMe textPrivate textPublic = do
 -- | logWarn prints a warning to the log
 logWarn :: BoardC s =>
             String -> MoveType s ()
-logWarn = lift . lift . innerLogWarn
+logWarn = liftFromInner . innerLogWarn
 
 innerLogWarn :: BoardC s =>
                  String -> InnerMoveType s ()
@@ -61,7 +64,7 @@ innerLogWarn warn = log' $ "Warning: " ++ warn
 -- this ends the game
 logError :: BoardC s =>
             String -> MoveType s a
-logError = lift . lift . innerLogError
+logError = liftFromInner . innerLogError
 
 innerLogError :: BoardC s =>
                  String -> InnerMoveType s a
@@ -73,7 +76,7 @@ innerLogError error = do
 -- this ends the game
 logFatal :: BoardC s =>
             String -> MoveType s a
-logFatal = lift . lift . innerLogFatal
+logFatal = liftFromInner . innerLogFatal
 
 innerLogFatal :: BoardC s =>
                  String -> InnerMoveType s a
@@ -85,7 +88,7 @@ innerLogFatal fatal = do
 -- this ends the game
 logTODO :: BoardC s =>
            String -> MoveType s a
-logTODO = lift . lift . innerLogTODO
+logTODO = liftFromInner . innerLogTODO
 
 innerLogTODO :: BoardC s =>
            String -> InnerMoveType s a
@@ -95,9 +98,13 @@ innerLogTODO todo = do
 
 -- ** helper for defining Moves and MoveType things
 
-getCurrentPlayer :: BoardC s =>
-                    MoveType s UserId
+getCurrentPlayer :: BoardC b =>
+                    MoveType b UserId
 getCurrentPlayer = S.gets getCurrentPlayer'
+
+getMachineState :: BoardC b =>
+                   MoveType b MachineState
+getMachineState = S.gets getMachineState'
 
 --------------------------------------------------------------------------------
 -- * helper related to 'Action'
