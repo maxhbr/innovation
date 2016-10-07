@@ -5,7 +5,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
 module Game.MetaGame.Types
-       ( PrettyPrint (..)
+       ( Viewable (..)
        , UserId (..), mkUserId, isAdmin
        , PlayerC (..)
        , Inquiry (..), Answer (..)
@@ -36,22 +36,84 @@ import           Control.Monad.Identity
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Writer (Writer, WriterT)
 import qualified Control.Monad.Trans.Writer as W
-import           Control.Monad.Trans.Except (ExceptT)
+import           Control.Monad.Trans.Except (Except, ExceptT)
 import qualified Control.Monad.Trans.Except as E
 import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
 
 --------------------------------------------------------------------------------
+-- ** Log
+
+-- data LogLevel
+--   = INFO
+--   | ERROR
+--   | NONE
+--   deriving (Eq,Show,Enum,Ord,Bounded)
+
+-- | A user dependent Log
+newtype Log = Log (UserId -> Text)
+
+clog :: String -> Log
+clog = Log . const . T.pack
+
+alog :: String -> Log
+alog msg = Log (\case
+                   Admin -> T.pack msg
+                   _     -> T.pack "")
+
+-- | helper function to get the log from the view of an user
+viewLog :: UserId -> Log -> Text
+viewLog userId (Log log) = log userId
+
+insertLog :: Log -> (Text -> Text) -> Log
+insertLog (Log l) f = Log $ \uid -> f (l uid)
+
+-- | we can combine logs to in an monoidal way
+instance Monoid Log where
+  mempty                    = clog ""
+  mappend (Log l1) (Log l2) = Log $ \userId -> let
+    lo1 = l1 userId
+    lo2 = l2 userId
+    sep = T.pack $ if (not . T.null) lo1 && (not . T.null) lo2
+                   then "\n"
+                   else ""
+    in T.concat [ l1 userId, sep ,l2 userId ]
+
+newtype View a = View (UserId -> a)
+
+-- | Viewable
+--    rules:
+--      restrict a == restrict (restrict a)
+--      showViewable False a == showViewable False (restrict a)
+class Viewable a where
+  showViewable :: Bool -- ^ wheter viewer is owner or admin
+               -> a -- ^ data to view
+               -> String -- ^ result (used for log generation)
+
+  -- | removes not-visible parts of the data, i.e. sets them to default
+  restrict :: a -> a
+  restrict = id
+
+  mkView :: UserId -> a -> View a
+  mkView owner a = let
+    v uid | uid `isEqOrAdmin` owner = a
+          | otherwise               = restrict a
+    in View v
+
+  logV :: UserId -> a -> Log
+  logV owner a = let
+    l uid | uid `isEqOrAdmin` owner = showViewable True a
+          | otherwise               = showViewable False (restrict a)
+    in Log $ T.pack . l
+
+  -- mkView :: Bool -> a -> a
+  -- mkView True  = id
+  -- mkView False = restrict
+
+--------------------------------------------------------------------------------
 -- * Basic data and type declerations
 --------------------------------------------------------------------------------
-
--- | PrettyPrint is for printing things for user output or for rougth debugging
-
-class PrettyPrint a where
-  pp :: a -> String
-  putpp :: a -> IO ()
-  putpp = putStrLn . pp
 
 --------------------------------------------------------------------------------
 -- ** Users and user-related stuff
@@ -70,13 +132,19 @@ data UserId = U String
 mkUserId :: String -> UserId
 mkUserId = U . sanitizeUserId
 
-instance PrettyPrint UserId where
-  pp Admin   = "Admin"
-  pp (U uid) = uid
+instance Viewable UserId where
+  showViewable _ Admin   = "Admin"
+  showViewable _ (U uid) = uid
 
 isAdmin :: UserId -> Bool
 isAdmin Admin = True
 isAdmin _     = False
+
+isEqOrAdmin :: UserId -- ^ the asking user
+            -> UserId -- ^ the user who is to be matched
+            -> Bool
+isEqOrAdmin Admin _   = True
+isEqOrAdmin uid owner = owner == uid
 
 class PlayerC player where
   getUId :: player -> UserId
@@ -103,9 +171,11 @@ instance Eq a =>
                                                     && io1 == io2
                                                     && ap1 == ap2
 
-instance Show a =>
-         Show (Inquiry a) where
-  show (Inquiry ap iq _ _) = iq ++ " <- " ++ pp ap
+instance Viewable a =>
+         Viewable (Inquiry a) where
+  restrict (Inquiry ap iq _ _) = Inquiry ap iq [] (const True)
+  showViewable isAllowed inq@(Inquiry ap iq io _) = iq ++ " <- " ++ showViewable isAllowed ap
+                                             ++ " (Options are " ++ "TODO" ++ ")"
 
 data Answer
   = Answer { answeringPlayer :: UserId -- ^ the user answering the inquiry
@@ -120,7 +190,7 @@ data MachineState
   = Prepare -- ^ the game has not yet been started and only 'Admin' should take actions
   | WaitForTurn -- ^ last turn was done completly and current player should choose his action
   | forall a.
-    (Show a) =>
+    (Viewable a) =>
     WaitForChoice (Inquiry a) -- ^ current turn requires more imput, which needs to be provided by some user
   | GameOver UserId -- ^ there was already an game ending situation and mentioned user has won, nothing should be able to change the current board
   -- deriving (Show)
@@ -132,20 +202,23 @@ instance Eq MachineState where
   (GameOver gr1)    == (GameOver gr2)    = gr1 == gr2
   _                 == _                 = False
 
-instance Show MachineState where
-  show Prepare           = "Prepare"
-  show WaitForTurn       = "WaitForTurn"
-  show (WaitForChoice _) = "WaitForChoice: " ++ "?"
-  show (GameOver winner) = "GameOver: " ++ (show winner) ++ " has won"
+instance Viewable MachineState where
+  restrict (WaitForChoice inq) = WaitForChoice (restrict inq)
+  restrict s                   = s
 
-instance PrettyPrint MachineState where
-  pp = show
+  showViewable _ Prepare             = "Prepare"
+  showViewable _ WaitForTurn         = "WaitForTurn"
+  showViewable b (WaitForChoice inq) = "WaitForChoice: " ++ (showViewable b inq)
+  showViewable b (GameOver winner)   = "GameOver: " ++ (showViewable b winner) ++ " has won"
 
 class BoardC board where
   emptyBoard :: board
 
   -- | metainformation on the state of the board
   getMachineState' :: board -> MachineState
+
+  -- | set the metainfo
+  setMachineState' :: MachineState -> board -> board
 
   -- | get the player, which is expected to act next (take a turn, give an answer, ...)
   -- if another user is acting, the game fails
@@ -157,7 +230,7 @@ class BoardC board where
   -- | atomic update
   -- this should check for winning conditions and do all other checks, which
   -- depend on the current state and could happen in mid turn
-  doAtomicUpdate :: board -> board
+  doAtomicUpdate :: board -> Except Text board
 
   -- | unpack the currently known result from the board
   -- If there is a winner, the board should know about it
@@ -171,30 +244,6 @@ class BoardC board where
   hasWinner board = case getWinner board of
     Just _ -> True
     Nothing -> False
-
---------------------------------------------------------------------------------
--- ** Log
-
--- | A user dependent Log
-newtype Log = Log (UserId -> Text)
-
-clog :: String -> Log
-clog = Log . const . T.pack
-
--- | helper function to get the log from the view of an user
-viewLog :: UserId -> Log -> Text
-viewLog userId (Log log) = log userId
-
--- | we can combine logs to in an monoidal way
-instance Monoid Log where
-  mempty                    = clog ""
-  mappend (Log l1) (Log l2) = Log $ \userId -> let
-    lo1 = l1 userId
-    lo2 = l2 userId
-    sep = T.pack $ if (not . T.null) lo1 && (not . T.null) lo2
-                   then "\n"
-                   else ""
-    in T.concat [ l1 userId, sep ,l2 userId ]
 
 --------------------------------------------------------------------------------
 -- ** Moves
@@ -237,7 +286,7 @@ runOuterMoveType b0 as move = E.runExceptT
 
 -- | Something of MoveType can be applied to an inital board state
 runMoveType :: board -> [Answer] -> MoveType board a -> MoveResult board a
-runMoveType b0 cs = runInnerMoveType . (runOuterMoveType b0 cs)
+runMoveType b0 cs = runInnerMoveType . runOuterMoveType b0 cs
 
 -- | The wrapper for a move
 -- a 'MoveWR' is a 'Move' which returns something
@@ -331,8 +380,8 @@ data Turn board = forall actionToken.
                        , answers :: [Answer] }
 
 instance Show (Turn board) where
-  show (Turn Admin actionToken choices)      = show actionToken ++ (show choices)
-  show (Turn (U userId) actionToken choices) = userId ++ ": " ++ show actionToken ++ (show choices)
+  show (Turn Admin actionToken choices)      = show actionToken ++ show choices
+  show (Turn (U userId) actionToken choices) = userId ++ ": " ++ show actionToken ++ show choices
 
 -- | The `Eq` instance of `Action board` is deriven from the `Show` instance
 instance Eq (Turn board) where
@@ -365,7 +414,7 @@ does' :: ActionToken board actionToken =>
 does' _ uid t = UTurn $ Turn uid t []
 
 chooses' :: Proxy board -> UserId -> (UserId -> Answer) -> UserInput board
-chooses' _ uid c = UChoice $ \t -> t{ answers=(c uid : answers t) }
+chooses' _ uid c = UChoice $ \t -> t{ answers=c uid : answers t }
 
 -- | possible answer (Yes)
 answerYes :: UserId -> Answer

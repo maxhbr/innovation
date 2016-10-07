@@ -38,7 +38,7 @@ log :: BoardC s =>
 log text = do
     loggingUser <- getCurrentPlayer
     liftFromInner . log' $
-      pp loggingUser ++ ": " ++ text
+      viewA loggingUser ++ ": " ++ text
 
 logForMe :: BoardC s =>
             String -> String -> MoveType s ()
@@ -46,7 +46,7 @@ logForMe textPrivate textPublic = do
     loggingUser <- getCurrentPlayer
     liftFromInner . lift . W.tell . Log $
       \user -> T.pack $
-               ((pp loggingUser ++ ": ") ++) $
+               ((viewA loggingUser ++ ": ") ++) $
                if user == loggingUser || user == Admin
                then textPrivate
                else textPublic
@@ -84,6 +84,16 @@ innerLogFatal fatal = do
   log' $ "Fatal: " ++ fatal
   E.throwE $ T.pack fatal
 
+-- | logInfo
+logInfo :: BoardC s =>
+           String -> MoveType s ()
+logInfo = liftFromInner . innerLogInfo
+
+innerLogInfo :: BoardC s =>
+                String -> InnerMoveType s ()
+innerLogInfo info = do
+  log' $ "Info: " ++ info
+
 -- | logTODO logs an unimplemented thing and throws the exception
 -- this ends the game
 logTODO :: BoardC s =>
@@ -91,7 +101,7 @@ logTODO :: BoardC s =>
 logTODO = liftFromInner . innerLogTODO
 
 innerLogTODO :: BoardC s =>
-           String -> InnerMoveType s a
+                String -> InnerMoveType s a
 innerLogTODO todo = do
   log' $ "TODO: " ++ todo
   E.throwE $ T.pack $ "TODO: " ++ todo
@@ -105,6 +115,12 @@ getCurrentPlayer = S.gets getCurrentPlayer'
 getMachineState :: BoardC b =>
                    MoveType b MachineState
 getMachineState = S.gets getMachineState'
+
+logMachineState :: BoardC s =>
+                   MoveType s ()
+logMachineState = do
+  ms <- getMachineState
+  log (viewA ms)
 
 --------------------------------------------------------------------------------
 -- * helper related to 'Action'

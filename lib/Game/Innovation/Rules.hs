@@ -20,6 +20,7 @@ import           Control.Lens
 import           Game.MetaGame
 import           Game.Innovation.Types
 import           Game.Innovation.TypesLenses
+import           Game.Innovation.CoreRules
 
 --------------------------------------------------------------------------------
 -- Helper functions

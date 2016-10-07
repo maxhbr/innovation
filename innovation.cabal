@@ -30,6 +30,7 @@ library
                      , Game.MetaGame.Types
                      , Game.Innovation
                      , Game.Innovation.Types
+                     , Game.Innovation.CoreRules
                      , Game.Innovation.Actions
                      , Game.Innovation.Actions.Admin
                      , Game.Innovation.Actions.Basic

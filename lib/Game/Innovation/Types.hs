@@ -96,7 +96,6 @@ data Card
          , _age         :: Age
          , _productions :: Productions
          , _dogmas      :: [Dogma] }
-  -- | SpecialAchievement {...}
   deriving (Show)
 
 data CardId = CardId { unpackCardId :: String }
@@ -117,17 +116,89 @@ instance PrettyPrint Card where
 instance Ord Card where
   compare c1 c2 = compare (getCId c1) (getCId c2)
 
+data SpecialAchievement
+  = SpecialAchievement { _achievementTitle :: String
+                       , _achievementDescription :: String
+                       , _achievementCondition :: Player -> Bool -- ^ programattically implementation of '_achievementDescription'
+                       , _achievementAlternative :: String }
+
+instance Show SpecialAchievement where
+  show (SpecialAchievement t d _ a) = t ++ ": " ++ d ++ " (" ++ a ++ ")"
+
+type SpecialAchievements = [SpecialAchievement]
+
+getSAId :: SpecialAchievement -> CardId
+getSAId SpecialAchievement{ _achievementTitle = t} = CardId $ "[" ++ t ++ "]"
+
+instance Eq SpecialAchievement where
+  sa1 == sa2 = getSAId sa1 == getSAId sa2
+
+instance Ord SpecialAchievement where
+  compare sa1 sa2 = compare (getSAId sa1) (getSAId sa2)
+
+instance PrettyPrint SpecialAchievement where
+  pp = unpackCardId . getSAId
+
+data Domination
+  = AgeDomination Card
+  | SpecialDomination SpecialAchievement
+  deriving (Show)
+instance PrettyPrint Domination where
+  pp (AgeDomination c) = pp c
+  pp (SpecialDomination sa) = pp sa
+
+instance PrettyPrint [Domination] where
+  pp [] = "No dominations"
+  pp ds = show (length ds) ++ " dominations"
 --------------------------------------------------------------------------------
 -- Players
 --------------------------------------------------------------------------------
+type RawStack = [Card]
+class Stack a where
+  getRawStack :: a -> RawStack
+  setRawStack :: a -> RawStack -> a
+  emptyStack :: a
 
-type Stack = [Card]
-emptyStack = [] :: Stack
+  pushCard :: Card -> a -> a
+  pushCard c a = setRawStack a (c : (getRawStack a))
+  pushBottomCard :: Card -> a -> a
+  pushBottomCard c a = setRawStack a (getRawStack a ++ [c])
+  popCard :: Card -> (Maybe Card,a)
+  popCard a = case getRawStack a of
+    []     -> (Nothing, a)
+    (c:cs) -> (Just c, setRawStack a cs)
+  isEmptyStack :: a -> Bool
+  isEmptyStack = null . getRawStack
+  getStackSize :: a -> Int
+  getStackSize = length . getRawStack
+
+newtype DrawStack = DrawStack RawStack
+instance Stack DrawStack where
+  getRawStack (DrawStack ds) = ds
+  setRawStack _ = DrawStack
+
+data PlayStack = PlayStack RawStack SplayState
+instance Stack PlayStack where
+  getRawStack (PlayStack ps _) = ps
+  setRawStack (PlayStack _ s) ps = PlayStack ps s
+
+newtype Influence = Influence RawStack
+instance Stack Influence where
+  getRawStack (Influence is) = is
+  setRawStack _ = Influence
+
+newtype Hand = Hand RawStack
+instance Stack Hand where
+  getRawStack (Hand is) = is
+  setRawStack _ = Hand
+
+newtype Dominateables = Dominateables RawStack
+
+newtype Dominations = Domination [Domination]
 
 instance PrettyPrint [Card] where
   pp [] = "[ 0 Cards ]"
   pp cs = "[ " ++ show (length cs) ++ " Cards (head is " ++ pp (head cs) ++ " ]"
-
 
 instance (PrettyPrint k, PrettyPrint v) =>
          PrettyPrint (Map k v) where
@@ -147,11 +218,10 @@ instance PrettyPrint SplayState where
 
 data Player
   = Player { _playerId    :: UserId
-           , _stacks      :: Map Color Stack
-           , _splayStates :: Map Color SplayState
-           , _influence   :: Stack
-           , _dominations :: Stack
-           , _hand        :: Stack }
+           , _playStacks  :: Map Color PlayStack
+           , _influence   :: Influence
+           , _dominations :: Dominations
+           , _hand        :: Hand }
   deriving (Show)
 
 instance Eq Player where
@@ -174,44 +244,21 @@ instance PrettyPrint Player where
 
 type PlayerOrder = [UserId]
 
-data Board = Board { _machineState  :: MachineState -- ^ The internal state of the underlying machine
-                   , _drawStacks    :: Map Age Stack -- ^ the draw stacks, one for every age. The topmost card is the head
-                   , _dominateables :: Stack -- ^ the cards, which could be dominated
-                   , _players       :: [Player] -- ^ the players playing in this game (in any order)
-                   , _playerOrder   :: PlayerOrder -- ^ the order, in which the players take actions
+data Board = Board { _machineState        :: MachineState -- ^ The internal state of the underlying machine
+                   , _drawStacks          :: Map Age DrawStack -- ^ the draw stacks, one for every age. The topmost card is the head
+                   , _dominateables       :: Dominateables -- ^ the cards, which could be dominated
+                   , _players             :: [Player] -- ^ the players playing in this game (in any order)
+                   , _playerOrder         :: PlayerOrder -- ^ the order, in which the players take actions
+                   , _specialAchievements :: SpecialAchievements
                    }
              deriving (Show)
 
-instance BoardC Board where
-  emptyBoard = Board Prepare Map.empty [] [] []
-
-  getMachineState' = _machineState
-
-  getCurrentPlayer' Board{ _machineState=(GameOver _)}     = Admin
-  getCurrentPlayer' Board{ _machineState=WaitForChoice cs} = askedPlayer cs
-  getCurrentPlayer' Board{ _machineState=Prepare}          = Admin
-  getCurrentPlayer' Board{ _playerOrder=[] }               = Admin
-  getCurrentPlayer' Board{ _playerOrder=order }            = head order
-
-  advancePlayerOrder b@Board{ _playerOrder = ps } = b{ _playerOrder = (advancePlayerOrder' ps) }
-    where
-      advancePlayerOrder' :: PlayerOrder -> PlayerOrder
-      advancePlayerOrder' []                       = []
-      advancePlayerOrder' [p]                      = [p]
-      advancePlayerOrder' (p1:(p2:ps)) | p1 == p2  = p2:ps -- ^ one consumes actions as long as it is not the last one
-                                       | otherwise = p2:ps ++ [p1,p1] -- ^ every player gets two actions
-
-  doAtomicUpdate = determineWinner . doSpecialAchievments
-    where
-      doSpecialAchievments = id -- TODO
-      determineWinner = id -- TODO
-
-instance PrettyPrint Board where
-  pp b = (replicate 60 '=') ++ "\n"
-         ++ "Board at " ++ pp (_machineState b) ++ " and current player is " ++ pp (getCurrentPlayer' b) ++ ":\n"
-         ++ pp (_drawStacks b)
-         ++ "dominateable: " ++ pp (_dominateables b) ++ "\n"
-         ++ concatMap pp (_players b)
+-- instance PrettyPrint Board where
+--   pp b = (replicate 60 '=') ++ "\n"
+--          ++ "Board at " ++ pp (_machineState b) ++ " and current player is " ++ pp (getCurrentPlayer' b) ++ ":\n"
+--          ++ pp (_drawStacks b)
+--          ++ "dominateable: " ++ pp (_dominateables b) ++ "\n"
+--          ++ concatMap pp (_players b)
 
 does :: ActionToken Board actionToken =>
         UserId -> actionToken -> UserInput Board
@@ -237,7 +284,7 @@ mkPlayer playerId = Player (U playerId)
                            (Map.fromList $ zip colors $ repeat emptyStack)
                            (Map.fromList $ zip colors $ repeat NotSplayed)
                            emptyStack
-                           emptyStack
+                           []
                            emptyStack
 
 -- | shuffle the draw stacks and the players

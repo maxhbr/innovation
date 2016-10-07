@@ -29,17 +29,21 @@ unpackToken token userId = do
     then unpackAction (getAction token) userId
     else M . logError $ "user " ++ pp userId ++ " is not allowed to " ++ show token
 
+generateNextTurnMessage :: BoardC board =>
+                           board -> InnerMoveType board board
+generateNextTurnMessage = undefined
+
 -- | run a turn on a board
 -- this also advances the player order, i.e. consumes an 'action'
 runTurn :: BoardC board =>
-            board -> Turn board ->InnerMoveType board board
+           board -> Turn board ->InnerMoveType board board
 runTurn b0 turn@(Turn userId actionToken choices) = do
   case (getMachineState' b0) of
     Prepare -> unless (userId == Admin) $
                  innerLogError "only admin is allowed to take turns in the prepare phase"
     WaitForTurn -> unless (getCurrentPlayer' b0 == userId) $
                      innerLogError $ "the player " ++ pp userId ++ " is not allowed to take an action"
-    WaitForChoice _ -> innerLogError "still waiting for answers"
+    WaitForChoice inq -> innerLogError $ "still waiting for answers to: " ++ (show inq)
     GameOver _ -> innerLogError "game already over"
 
   let move = unpackMove (unpackToken actionToken userId)
