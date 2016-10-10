@@ -27,7 +27,7 @@ unpackToken token userId = do
   b <- isAllowedFor token userId
   if b
     then unpackAction (getAction token) userId
-    else M . logError $ "user " ++ pp userId ++ " is not allowed to " ++ show token
+    else M . logError $ "user " ++ show userId ++ " is not allowed to " ++ show token
 
 generateNextTurnMessage :: BoardC board =>
                            board -> InnerMoveType board board
@@ -42,7 +42,7 @@ runTurn b0 turn@(Turn userId actionToken choices) = do
     Prepare -> unless (userId == Admin) $
                  innerLogError "only admin is allowed to take turns in the prepare phase"
     WaitForTurn -> unless (getCurrentPlayer' b0 == userId) $
-                     innerLogError $ "the player " ++ pp userId ++ " is not allowed to take an action"
+                     innerLogError $ "the player " ++ show userId ++ " is not allowed to take an action"
     WaitForChoice inq -> innerLogError $ "still waiting for answers to: " ++ (show inq)
     GameOver _ -> innerLogError "game already over"
 

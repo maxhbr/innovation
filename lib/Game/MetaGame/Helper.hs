@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Game.MetaGame.Helper
        where
 import           Prelude hiding (log)
@@ -15,6 +16,8 @@ import           Control.Monad.Trans.Writer (WriterT)
 import qualified Control.Monad.Trans.Writer as W
 import           Control.Monad.Trans.Except (ExceptT)
 import qualified Control.Monad.Trans.Except as E
+import           Control.Monad.Trans.Reader (Reader, ReaderT)
+import qualified Control.Monad.Trans.Reader as R
 import           Control.Monad.Trans.State.Lazy (State, StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
@@ -38,18 +41,18 @@ log :: BoardC s =>
 log text = do
     loggingUser <- getCurrentPlayer
     liftFromInner . log' $
-      viewA loggingUser ++ ": " ++ text
+      show loggingUser ++ ": " ++ text
 
 logForMe :: BoardC s =>
             String -> String -> MoveType s ()
 logForMe textPrivate textPublic = do
     loggingUser <- getCurrentPlayer
-    liftFromInner . lift . W.tell . Log $
-      \user -> T.pack $
-               ((viewA loggingUser ++ ": ") ++) $
-               if user == loggingUser || user == Admin
-               then textPrivate
-               else textPublic
+    liftFromInner . lift . W.tell . Log $ do
+      viewer <- R.ask
+      return (T.pack (show loggingUser ++ ": " ++
+                      if viewer == loggingUser || viewer == Admin
+                      then textPrivate
+                      else textPublic))
 
 -- | logWarn prints a warning to the log
 logWarn :: BoardC s =>
@@ -118,9 +121,7 @@ getMachineState = S.gets getMachineState'
 
 logMachineState :: BoardC s =>
                    MoveType s ()
-logMachineState = do
-  ms <- getMachineState
-  log (viewA ms)
+logMachineState = getMachineState >>= (log . show)
 
 --------------------------------------------------------------------------------
 -- * helper related to 'Action'

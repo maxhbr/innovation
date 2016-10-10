@@ -15,18 +15,19 @@ import qualified Control.Monad.Trans.Except as E
 import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
 import           Data.Proxy
-import           Control.Lens
+import qualified Control.Lens as L
 
 import           Game.MetaGame
 import           Game.Innovation.Types
-import           Game.Innovation.TypesLenses
+import qualified Game.Innovation.TypesLenses as L
 import           Game.Innovation.CoreRules
 
 --------------------------------------------------------------------------------
 -- Helper functions
 --------------------------------------------------------------------------------
 
-getStackFromMapBy :: (Ord k) => k -> Map k Stack -> Stack
+getStackFromMapBy :: (Ord k, Stack s) =>
+                     k -> Map k s -> s
 getStackFromMapBy = Map.findWithDefault emptyStack
 
 getPlayerById :: UserId -> MoveType Board Player
@@ -44,9 +45,9 @@ getPlayerById uid = do
 
 getPlayersAge :: Player -> Age
 getPlayersAge player = let
-  currentAges = (map (fromEnum . view age . head) . filter (not . null) . Map.elems) $ _stacks player
+  currentAges = (map (_age . head . getRawStack) . filter (not . isEmptyStack) . Map.elems) $ _playStacks player
   in if currentAges /= []
-     then toEnum $ maximum currentAges
+     then maximum currentAges
      else Age1
 
 getDrawAge :: Age -> MoveType Board (Maybe Age)
@@ -54,7 +55,7 @@ getDrawAge inputAge = do
   currentDrawStacks <- S.gets _drawStacks
   let agesAboveWithCards = Map.keys $
                            Map.filterWithKey (\ age stack -> age >= inputAge
-                                                             && stack /= []) currentDrawStacks
+                                                             && (not . isEmptyStack) stack) currentDrawStacks
   return $ if null agesAboveWithCards
            then Nothing
            else Just $ head agesAboveWithCards
@@ -80,20 +81,22 @@ getProductions :: Player -> [Production]
 getProductions player = concatMap (`getProductionsForColor` player) colors
 
 getProductionsForColor :: Color -> Player -> [Production]
-getProductionsForColor color player = getProductionsForStack stackOfColor splayStateOfColor
+getProductionsForColor color player = getProductionsForStack stackOfColor
   where
-    stackOfColor      = getStackFromMapBy color $ view stacks player
-    splayStateOfColor = Map.findWithDefault NotSplayed color $ view splayStates player
+    stackOfColor      = getStackFromMapBy color $ L.view L.playStacks player
 
-getProductionsForStack :: Stack -> SplayState -> [Production]
-getProductionsForStack [] _              = []
-getProductionsForStack [card] _          = map ((\v -> v (view productions card)) . view)
-                                               [ tlProd, blProd, bcProd, brProd ]
-getProductionsForStack (c:cs) splayState = getProductionsForStack [c] splayState ++ prodOfInactive
+getProductionsForStack :: PlayStack -> [Production]
+getProductionsForStack (PlayStack [] _)              = []
+getProductionsForStack (PlayStack [card] _)          = map ((\v -> v (_productions card)) . L.view)
+                                                       [ L.tlProd, L.blProd, L.bcProd, L.brProd ]
+getProductionsForStack (PlayStack (c:cs) splayState) = getProductionsForStack (PlayStack [c] splayState) ++ prodOfInactive
   where
-    prodOfInactive = concatMap (\card -> map ((\v -> v (view productions card)) . view) $
-                                         getLenses splayState) cs
-    getLenses SplayedLeft  = [ brProd ]
-    getLenses SplayedRight = [ tlProd, blProd ]
-    getLenses SplayedUp    = [ blProd, bcProd, brProd ]
+    prodOfInactive = concatMap (getVisible splayState) cs
+
+    getVisible :: SplayState -> Card -> [Production]
+    getVisible s c = map (\l -> (L.view l . _productions) c) (getLenses s)
+
+    getLenses SplayedLeft  = [ L.brProd ]
+    getLenses SplayedRight = [ L.tlProd, L.blProd ]
+    getLenses SplayedUp    = [ L.blProd, L.bcProd, L.brProd ]
     getLenses NotSplayed   = []

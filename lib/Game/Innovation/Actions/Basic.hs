@@ -91,7 +91,7 @@ drawOfAnd inputAge = mkA $ \userId -> do
       S.modify $ L.over L.drawStacks (Map.insert age rest)
       case cards of
         [card] -> do
-          logForMe ("draw the card " ++ pp card) ("draw a card of age " ++ pp age)
+          logForMe ("draw the card " ++ show card) ("draw a card of age " ++ show age)
           return [card]
         []     -> logTODO "endgame..."
         _      -> logFatal "should not be reacheable"
@@ -117,9 +117,9 @@ putIntoPlay :: [Card] -> Action Board
 putIntoPlay card = mkA $ \userId -> let
   put1IntoPlay :: Card -> MoveType Board ()
   put1IntoPlay card = do
-    log ("put the card " ++ pp card ++ " into play")
+    log ("put the card " ++ show card ++ " into play")
     let color = L.view L.color card
-    modifyPlayer userId $ L.over L.stacks (Map.adjust (card :) color)
+    modifyPlayer userId $ L.over L.playStacks (Map.adjust (card :) color)
   in mapM_ put1IntoPlay card
 
 score :: [Card] -> Action Board
@@ -136,10 +136,11 @@ dominateAge age = mkA $ \userId -> let
   (mc, ds) <- S.gets ((dominateAge' []) . (L.view L.dominateables))
   case mc of
     Just card -> do
-      log ("dominate age " ++ pp age)
+      log ("dominate age " ++ show age)
+  
       S.modify $ \b -> b { _dominateables=ds }
       modifyPlayer userId $ L.over L.dominations (card :)
-    Nothing   -> logError $ "there is no card of age " ++ pp age ++ " to be dominated"
+    Nothing   -> logError $ "there is no card of age " ++ show age ++ " to be dominated"
 
 -- --------------------------------------------------------------------------------
 -- -- | Draw an card and put it into an temporary stack

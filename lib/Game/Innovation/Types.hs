@@ -31,24 +31,21 @@ import           Game.MetaGame
 
 data Color = Blue | Purple | Red | Yellow | Green
   deriving (Eq,Show,Read,Enum,Ord,Bounded)
-instance PrettyPrint Color where
-  pp = show
+instance View Color
 
 colors :: [Color]
 colors = [minBound ..]
 
 data Age = Age1 | Age2 | Age3 | Age4 | Age5 | Age6 | Age7 | Age8 | Age9 | Age10
   deriving (Eq,Show,Read,Enum,Ord,Bounded)
-instance PrettyPrint Age where
-  pp = show
+instance View Age
 
 ages :: [Age]
 ages = [minBound ..]
 
 data Symbol = Castle | Tree | Crown | Bulb | Factory | Clock
   deriving (Eq,Show,Read,Enum,Ord,Bounded)
-instance PrettyPrint Symbol where
-  pp = show
+instance View Symbol
 
 symbols :: [Symbol]
 symbols = [minBound ..]
@@ -61,8 +58,8 @@ data Dogma
   = Dogma Symbol String (Action Board)
   | IDemand Symbol String (Action Board)
 instance Show Dogma where
-  show (Dogma s d _)   = "[" ++ pp s ++ "] " ++ d
-  show (IDemand s d _) = "[" ++ pp s ++ "] " ++ d
+  show (Dogma s d _)   = "[" ++ show s ++ "] " ++ d
+  show (IDemand s d _) = "[" ++ show s ++ "] " ++ d
 
 --------------------------------------------------------------------------------
 -- Cards
@@ -96,6 +93,7 @@ data Card
          , _age         :: Age
          , _productions :: Productions
          , _dogmas      :: [Dogma] }
+  | CardBackside Age
   deriving (Show)
 
 data CardId = CardId { unpackCardId :: String }
@@ -109,9 +107,6 @@ getCId Card{ _title=t, _age=a } = CardId $ "[" ++ show a ++ ": " ++ t ++ "]"
 
 instance Eq Card where
   c1 == c2 = getCId c1 == getCId c2
-
-instance PrettyPrint Card where
-  pp = unpackCardId . getCId
 
 instance Ord Card where
   compare c1 c2 = compare (getCId c1) (getCId c2)
@@ -136,20 +131,15 @@ instance Eq SpecialAchievement where
 instance Ord SpecialAchievement where
   compare sa1 sa2 = compare (getSAId sa1) (getSAId sa2)
 
-instance PrettyPrint SpecialAchievement where
-  pp = unpackCardId . getSAId
-
 data Domination
   = AgeDomination Card
   | SpecialDomination SpecialAchievement
   deriving (Show)
-instance PrettyPrint Domination where
-  pp (AgeDomination c) = pp c
-  pp (SpecialDomination sa) = pp sa
 
-instance PrettyPrint [Domination] where
-  pp [] = "No dominations"
-  pp ds = show (length ds) ++ " dominations"
+instance View [Domination] where
+  view [] = return $ T.pack "No dominations"
+  view ds = return $ T.pack $ show (length ds) ++ " dominations"
+
 --------------------------------------------------------------------------------
 -- Players
 --------------------------------------------------------------------------------
@@ -159,52 +149,89 @@ class Stack a where
   setRawStack :: a -> RawStack -> a
   emptyStack :: a
 
-  pushCard :: Card -> a -> a
-  pushCard c a = setRawStack a (c : (getRawStack a))
-  pushBottomCard :: Card -> a -> a
-  pushBottomCard c a = setRawStack a (getRawStack a ++ [c])
-  popCard :: Card -> (Maybe Card,a)
-  popCard a = case getRawStack a of
-    []     -> (Nothing, a)
-    (c:cs) -> (Just c, setRawStack a cs)
   isEmptyStack :: a -> Bool
   isEmptyStack = null . getRawStack
+
   getStackSize :: a -> Int
   getStackSize = length . getRawStack
 
+  onRawStack :: (RawStack -> RawStack) -> a -> a
+  onRawStack f a = setRawStack a (f (getRawStack a))
+
+  pushCard :: Card -> a -> a
+  pushCard c = onRawStack (c :)
+
+  pushCards :: RawStack -> a -> a
+  pushCards cs = onRawStack (cs ++)
+
+  pushBottomCard :: Card -> a -> a
+  pushBottomCard c = onRawStack (++ [c])
+
+  pushBottomCards :: RawStack -> a -> a
+  pushBottomCards cs = onRawStack (++ cs)
+
+  popCard :: a -> (Maybe Card,a)
+  popCard a = case getRawStack a of
+    []     -> (Nothing, a)
+    (c:cs) -> (Just c, setRawStack a cs)
+
+  popCards :: Int -> a -> ([Card], a)
+  popCards 0 a = ([],a)
+  popCards n a = case (popCard a) of
+    (Nothing, a') -> ([], a')
+    (Just c, a')  -> (\(cs,a'') -> (c : cs, a'')) (popCards (n-1) a')
+
 newtype DrawStack = DrawStack RawStack
+                  deriving (Show)
 instance Stack DrawStack where
   getRawStack (DrawStack ds) = ds
   setRawStack _ = DrawStack
+  emptyStack = DrawStack []
 
 data PlayStack = PlayStack RawStack SplayState
+               deriving (Show)
 instance Stack PlayStack where
   getRawStack (PlayStack ps _) = ps
-  setRawStack (PlayStack _ s) ps = PlayStack ps s
+  setRawStack (PlayStack _ ss) ps = PlayStack ps (if length ps > 1
+                                                  then ss
+                                                  else NotSplayed)
+  emptyStack = PlayStack [] NotSplayed
+
+  popCard (PlayStack [] _)      = (Nothing, PlayStack [] NotSplayed)
+  popCard (PlayStack [c] _)     = (Just c, PlayStack [] NotSplayed)
+  popCard (PlayStack [c1,c2] _) = (Just c1, PlayStack [c2] NotSplayed)
+  popCard (PlayStack (c:cs) ss) = (Just c, PlayStack cs ss)
+
+getSplayState :: PlayStack -> SplayState
+getSplayState (PlayStack _ ss) = ss
 
 newtype Influence = Influence RawStack
+                  deriving (Show)
 instance Stack Influence where
   getRawStack (Influence is) = is
   setRawStack _ = Influence
+  emptyStack = Influence []
 
 newtype Hand = Hand RawStack
+             deriving (Show)
 instance Stack Hand where
   getRawStack (Hand is) = is
   setRawStack _ = Hand
+  emptyStack = Hand []
 
 newtype Dominateables = Dominateables RawStack
+                      deriving (Show)
+instance Stack Dominateables where
+  getRawStack (Dominateables is) = is
+  setRawStack _ = Dominateables
+  emptyStack = Dominateables []
 
-newtype Dominations = Domination [Domination]
+newtype Dominations = Dominations [Domination]
+                      deriving (Show)
 
-instance PrettyPrint [Card] where
-  pp [] = "[ 0 Cards ]"
-  pp cs = "[ " ++ show (length cs) ++ " Cards (head is " ++ pp (head cs) ++ " ]"
-
-instance (PrettyPrint k, PrettyPrint v) =>
-         PrettyPrint (Map k v) where
-  pp = let
-    f k a result = result ++ "" ++ pp k ++ ": " ++ pp a ++ "\n"
-    in Map.foldWithKey f ""
+instance View [Card] where
+  view [] = (return . T.pack) "[ 0 Cards ]"
+  view cs = (return . T.pack) ("[ " ++ show (length cs) ++ " Cards (head is " ++ show (head cs) ++ " ]")
 
 data SplayState
   = SplayedLeft
@@ -213,8 +240,7 @@ data SplayState
   | NotSplayed
   deriving (Eq,Show,Enum,Bounded)
 
-instance PrettyPrint SplayState where
-  pp = show
+instance View SplayState
 
 data Player
   = Player { _playerId    :: UserId
@@ -230,13 +256,15 @@ instance Eq Player where
 instance PlayerC Player where
   getUId = _playerId
 
-instance PrettyPrint Player where
-  pp p = "** Player: " ++ pp (_playerId p) ++ ":\n"
-         ++ pp (_stacks p)
-         ++ pp (_splayStates p)
-         ++ "influence: " ++ pp (_influence p) ++ "\n"
-         ++ "dominations: " ++ pp (_dominations p) ++ "\n"
-         ++ "hand: " ++ pp (_hand p) ++ "\n"
+instance View Player where
+  extractOwner = Just . getUId
+  view p = undefined
+  -- pp p = "** Player: " ++ pp (_playerId p) ++ ":\n"
+  --        ++ pp (_stacks p)
+  --        ++ pp (_splayStates p)
+  --        ++ "influence: " ++ pp (_influence p) ++ "\n"
+  --        ++ "dominations: " ++ pp (_dominations p) ++ "\n"
+  --        ++ "hand: " ++ pp (_hand p) ++ "\n"
 
 --------------------------------------------------------------------------------
 -- Game state
@@ -252,13 +280,6 @@ data Board = Board { _machineState        :: MachineState -- ^ The internal stat
                    , _specialAchievements :: SpecialAchievements
                    }
              deriving (Show)
-
--- instance PrettyPrint Board where
---   pp b = (replicate 60 '=') ++ "\n"
---          ++ "Board at " ++ pp (_machineState b) ++ " and current player is " ++ pp (getCurrentPlayer' b) ++ ":\n"
---          ++ pp (_drawStacks b)
---          ++ "dominateable: " ++ pp (_dominateables b) ++ "\n"
---          ++ concatMap pp (_players b)
 
 does :: ActionToken Board actionToken =>
         UserId -> actionToken -> UserInput Board
@@ -282,17 +303,16 @@ notToPlayMaybe = answerNo
 mkPlayer :: String -> Player
 mkPlayer playerId = Player (U playerId)
                            (Map.fromList $ zip colors $ repeat emptyStack)
-                           (Map.fromList $ zip colors $ repeat NotSplayed)
                            emptyStack
-                           []
+                           (Dominations [])
                            emptyStack
 
 -- | shuffle the draw stacks and the players
 shuffleState :: Int -> Board -> Board
-shuffleState seed gs = gs{ _drawStacks=permutatedDS, _players=permutatedPlayers }
+shuffleState seed board = board{ _drawStacks=permutatedDS, _players=permutatedPlayers }
   where
     stdGen = mkStdGen seed
     shuffle []    = []
     shuffle list = shuffle' list (length list) stdGen
-    permutatedDS = Map.map shuffle $ _drawStacks gs
-    permutatedPlayers = shuffle $ _players gs
+    permutatedDS = Map.map (onRawStack shuffle) (_drawStacks board)
+    permutatedPlayers = shuffle $ _players board

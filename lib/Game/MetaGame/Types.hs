@@ -4,13 +4,14 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Game.MetaGame.Types
-       ( Viewable (..)
-       , UserId (..), mkUserId, isAdmin
+       ( UserId (..), mkUserId, isAdmin
+       , Log (..), clog, viewLog
+       , View (..)
        , PlayerC (..)
        , Inquiry (..), Answer (..)
        , BoardC (..), MachineState (..)
-       , Log (..), clog, viewLog
        , InnerMoveType, InnerMoveResult, runInnerMoveType
        , OuterMoveResult, runOuterMoveType
        , MoveType, MoveResult, runMoveType
@@ -38,82 +39,11 @@ import           Control.Monad.Trans.Writer (Writer, WriterT)
 import qualified Control.Monad.Trans.Writer as W
 import           Control.Monad.Trans.Except (Except, ExceptT)
 import qualified Control.Monad.Trans.Except as E
+import           Control.Monad.Trans.Reader (Reader, ReaderT)
+import qualified Control.Monad.Trans.Reader as R
 import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
-
---------------------------------------------------------------------------------
--- ** Log
-
--- data LogLevel
---   = INFO
---   | ERROR
---   | NONE
---   deriving (Eq,Show,Enum,Ord,Bounded)
-
--- | A user dependent Log
-newtype Log = Log (UserId -> Text)
-
-clog :: String -> Log
-clog = Log . const . T.pack
-
-alog :: String -> Log
-alog msg = Log (\case
-                   Admin -> T.pack msg
-                   _     -> T.pack "")
-
--- | helper function to get the log from the view of an user
-viewLog :: UserId -> Log -> Text
-viewLog userId (Log log) = log userId
-
-insertLog :: Log -> (Text -> Text) -> Log
-insertLog (Log l) f = Log $ \uid -> f (l uid)
-
--- | we can combine logs to in an monoidal way
-instance Monoid Log where
-  mempty                    = clog ""
-  mappend (Log l1) (Log l2) = Log $ \userId -> let
-    lo1 = l1 userId
-    lo2 = l2 userId
-    sep = T.pack $ if (not . T.null) lo1 && (not . T.null) lo2
-                   then "\n"
-                   else ""
-    in T.concat [ l1 userId, sep ,l2 userId ]
-
-newtype View a = View (UserId -> a)
-
--- | Viewable
---    rules:
---      restrict a == restrict (restrict a)
---      showViewable False a == showViewable False (restrict a)
-class Viewable a where
-  showViewable :: Bool -- ^ wheter viewer is owner or admin
-               -> a -- ^ data to view
-               -> String -- ^ result (used for log generation)
-
-  -- | removes not-visible parts of the data, i.e. sets them to default
-  restrict :: a -> a
-  restrict = id
-
-  mkView :: UserId -> a -> View a
-  mkView owner a = let
-    v uid | uid `isEqOrAdmin` owner = a
-          | otherwise               = restrict a
-    in View v
-
-  logV :: UserId -> a -> Log
-  logV owner a = let
-    l uid | uid `isEqOrAdmin` owner = showViewable True a
-          | otherwise               = showViewable False (restrict a)
-    in Log $ T.pack . l
-
-  -- mkView :: Bool -> a -> a
-  -- mkView True  = id
-  -- mkView False = restrict
-
---------------------------------------------------------------------------------
--- * Basic data and type declerations
---------------------------------------------------------------------------------
 
 --------------------------------------------------------------------------------
 -- ** Users and user-related stuff
@@ -131,10 +61,6 @@ data UserId = U String
             deriving (Show,Eq,Read)
 mkUserId :: String -> UserId
 mkUserId = U . sanitizeUserId
-
-instance Viewable UserId where
-  showViewable _ Admin   = "Admin"
-  showViewable _ (U uid) = uid
 
 isAdmin :: UserId -> Bool
 isAdmin Admin = True
@@ -154,6 +80,133 @@ class PlayerC player where
   hasEqualUId player1 player2 = player1 `hasUId` getUId player2
 
 --------------------------------------------------------------------------------
+-- ** Log
+
+-- data LogLevel
+--   = INFO
+--   | ERROR
+--   | NONE
+--   deriving (Eq,Show,Enum,Ord,Bounded)
+
+type ViewerDependent = Reader UserId
+
+-- | A user dependent Log
+-- newtype Log = Log (UserId -> Text)
+newtype Log = Log (ViewerDependent Text)
+
+clog :: String -> Log
+clog = Log . return . T.pack
+
+onlyForAdmin :: Log -> Log
+onlyForAdmin (Log l) = Log $ do
+  viewer <- R.ask
+  if isAdmin viewer
+    then l
+    else return ""
+
+alog :: String -> Log
+alog = onlyForAdmin . clog
+
+-- | helper function to get the log from the view of an user
+viewLog :: UserId -> Log -> Text
+viewLog userId (Log log) = R.runReader log userId
+
+-- This may result in very bad performance
+cleanText :: Text -> Text
+cleanText t = let
+  stripedText = T.strip t
+  in if T.null stripedText
+     then stripedText
+     else stripedText `T.snoc` '\n'
+
+-- | we can combine logs to in an monoidal way
+instance Monoid Log where
+  mempty                    = clog ""
+  mappend (Log l1) (Log l2) = Log $ do
+    r1 <- fmap cleanText l1
+    r2 <- fmap cleanText l2
+    return (r1 `T.append` r2)
+
+class Show a =>
+      View a where
+  showRestricted :: a -> String
+  showRestricted = show
+
+  extractOwner :: a -> Maybe UserId
+  extractOwner _ = Nothing
+
+  view :: a -> ViewerDependent Text
+  view a = do
+    let owner = extractOwner a
+    viewer <- R.ask
+    return ((case owner of
+                Nothing    -> T.pack . show
+                Just owner -> T.pack . if isAdmin viewer || (viewer == owner)
+                                       then show
+                                       else showRestricted) a)
+
+-- newtype View a = View { unView :: ReaderT Bool -- ^ whether the viewing user is by the context allowed to view
+--                                           ( Reader UserId ) -- ^ the viewing user
+--                                           a }
+
+-- -- | Viewable
+-- --    rules:
+-- --      restrict a == restrict (restrict a)
+-- --      showViewable False a == showViewable False (restrict a)
+-- class Show a =>
+--       Viewable a where
+--   -- | This is how to to display some viewable thing
+--   showViewable :: Bool -- ^ wheter viewer is owner or admin
+--                -> a -- ^ data to view
+--                -> String -- ^ result (used for log generation)
+--   showViewable True a  = show a
+--   showViewable False a = show (restrict _)
+
+--   -- | this is the main method to implement
+--   -- it returns, depending on the context, an restricted data
+--   mkView' :: a -> View a
+--   mkView' = View . return
+
+--   -- | some structures know, who their owner is
+--   getViewability :: UserId -> a -> Bool
+--   getViewability _ _ = True
+
+--   mkView :: a -> View a
+--   mkView a = View $ do
+--     wasAllowed <- R.ask
+--     viewingUser <- lift R.ask
+--     let newAllowed = isAdmin viewingUser
+--                      || ( wasAllowed
+--                           && ( getViewability viewingUser a ) )
+--     return ( R.runReader
+--              ( R.runReaderT
+--                ( ( unView . mkView' ) a )
+--                newAllowed )
+--              viewingUser )
+
+-- view :: Viewable a =>
+--         UserId -> a -> a
+-- view viewer a = let
+--   v = ( unView . mkView ) a
+--   in R.runReader ( R.runReaderT v True ) viewer
+
+-- showUnsafe :: Viewable a =>
+--               a -> String
+-- showUnsafe = showViewable True
+
+-- showDefensive :: Viewable a =>
+--                  a -> String
+-- showDefensive = showViewable False
+
+-- mkLogV :: Viewable a =>
+--           a -> Log
+-- mkLogV a = Log $ \uid -> T.pack (showViewable (getViewability uid a) a)
+
+--------------------------------------------------------------------------------
+-- * Basic data and type declerations
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
 -- ** Choices
 -- While evaluating a turn, there might be the point where user input by an
 -- specific user is required. This question is represented by an 'Inquiry'.
@@ -171,17 +224,22 @@ instance Eq a =>
                                                     && io1 == io2
                                                     && ap1 == ap2
 
-instance Viewable a =>
-         Viewable (Inquiry a) where
-  restrict (Inquiry ap iq _ _) = Inquiry ap iq [] (const True)
-  showViewable isAllowed inq@(Inquiry ap iq io _) = iq ++ " <- " ++ showViewable isAllowed ap
-                                             ++ " (Options are " ++ "TODO" ++ ")"
+instance Show a =>
+         Show (Inquiry a) where
+  show inq@(Inquiry ap iq io _) = iq ++ " <- " ++ show ap ++ " (Options are " ++ "TODO" ++ ")"
+instance Show a =>
+         View (Inquiry a) where
+  extractOwner (Inquiry ap _ _ _) = Just ap
+  showRestricted inq@(Inquiry ap iq _ _) = iq ++ " <- " ++ show ap
 
 data Answer
   = Answer { answeringPlayer :: UserId -- ^ the user answering the inquiry
            , answer :: [Int] } -- ^ choose options by their indices (starting with 0)
                                -- '[]' means "No" for boolean questions, '[0]' is "Yes"
   deriving (Show, Eq)
+instance View Answer where
+  extractOwner (Answer ap _) = Just ap
+  showRestricted (Answer ap _) = "[Answer by " ++ show ap ++ "]"
 
 --------------------------------------------------------------------------------
 -- ** State
@@ -190,10 +248,9 @@ data MachineState
   = Prepare -- ^ the game has not yet been started and only 'Admin' should take actions
   | WaitForTurn -- ^ last turn was done completly and current player should choose his action
   | forall a.
-    (Viewable a) =>
+    (Show a) =>
     WaitForChoice (Inquiry a) -- ^ current turn requires more imput, which needs to be provided by some user
   | GameOver UserId -- ^ there was already an game ending situation and mentioned user has won, nothing should be able to change the current board
-  -- deriving (Show)
 
 instance Eq MachineState where
   Prepare           == Prepare           = True
@@ -202,14 +259,16 @@ instance Eq MachineState where
   (GameOver gr1)    == (GameOver gr2)    = gr1 == gr2
   _                 == _                 = False
 
-instance Viewable MachineState where
-  restrict (WaitForChoice inq) = WaitForChoice (restrict inq)
-  restrict s                   = s
-
-  showViewable _ Prepare             = "Prepare"
-  showViewable _ WaitForTurn         = "WaitForTurn"
-  showViewable b (WaitForChoice inq) = "WaitForChoice: " ++ (showViewable b inq)
-  showViewable b (GameOver winner)   = "GameOver: " ++ (showViewable b winner) ++ " has won"
+instance Show MachineState where
+  show Prepare             = "Prepare"
+  show WaitForTurn         = "WaitForTurn"
+  show (WaitForChoice inq) = "WaitForChoice: " ++ show inq
+  show (GameOver winner)   = "GameOver: " ++ show winner ++ " has won"
+instance View MachineState where
+  extractOwner (WaitForChoice inq) = extractOwner inq
+  extractOwner _                   = Nothing
+  showRestricted (WaitForChoice inq) = "WaitForChoice: " ++ showRestricted inq
+  showRestricted ms                  = show ms
 
 class BoardC board where
   emptyBoard :: board
