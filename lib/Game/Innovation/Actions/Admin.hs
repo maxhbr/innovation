@@ -34,13 +34,12 @@ setDeck :: Move Board
 setDeck = M $ S.modify (\board -> board{ _drawStacks=getDeck })
 
 drawDominations :: Move Board
-drawDominations = M $ do
-  ds <- S.gets ((map head) . Map.elems . (L.view L.drawStacks))
-  S.modify (\board -> board{ _dominateables=ds })
-  S.modify (\board -> board{ _drawStacks=(Map.map drop (_drawStacks board))})
-  where
-    drop [] = []
-    drop cs = tail cs
+drawDominations = M $
+                  mapM_ (\age -> do
+                            (d,ds) <- S.gets (popCards 1 . fromJust . (Map.lookup age) . (L.view L.drawStacks))
+                            S.modify (L.over L.dominateables (pushCards d))
+                            S.modify (L.over L.drawStacks (Map.insert age ds))
+                        ) ages
 
 shuffle :: Int -> Move Board
 shuffle seed = M $ do

@@ -9,6 +9,7 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.List as List
 import           Data.Proxy
 import           System.Random
 import           System.Random.Shuffle (shuffle')
@@ -149,37 +150,17 @@ class Stack a where
   setRawStack :: a -> RawStack -> a
   emptyStack :: a
 
-  isEmptyStack :: a -> Bool
-  isEmptyStack = null . getRawStack
+isEmptyStack :: Stack a =>
+                a -> Bool
+isEmptyStack = null . getRawStack
 
-  getStackSize :: a -> Int
-  getStackSize = length . getRawStack
+getStackSize :: Stack a =>
+                a -> Int
+getStackSize = length . getRawStack
 
-  onRawStack :: (RawStack -> RawStack) -> a -> a
-  onRawStack f a = setRawStack a (f (getRawStack a))
-
-  pushCard :: Card -> a -> a
-  pushCard c = onRawStack (c :)
-
-  pushCards :: RawStack -> a -> a
-  pushCards cs = onRawStack (cs ++)
-
-  pushBottomCard :: Card -> a -> a
-  pushBottomCard c = onRawStack (++ [c])
-
-  pushBottomCards :: RawStack -> a -> a
-  pushBottomCards cs = onRawStack (++ cs)
-
-  popCard :: a -> (Maybe Card,a)
-  popCard a = case getRawStack a of
-    []     -> (Nothing, a)
-    (c:cs) -> (Just c, setRawStack a cs)
-
-  popCards :: Int -> a -> ([Card], a)
-  popCards 0 a = ([],a)
-  popCards n a = case (popCard a) of
-    (Nothing, a') -> ([], a')
-    (Just c, a')  -> (\(cs,a'') -> (c : cs, a'')) (popCards (n-1) a')
+onRawStack :: Stack a =>
+              (RawStack -> RawStack) -> a -> a
+onRawStack f a = setRawStack a (f (getRawStack a))
 
 newtype DrawStack = DrawStack RawStack
                   deriving (Show)
@@ -196,11 +177,6 @@ instance Stack PlayStack where
                                                   then ss
                                                   else NotSplayed)
   emptyStack = PlayStack [] NotSplayed
-
-  popCard (PlayStack [] _)      = (Nothing, PlayStack [] NotSplayed)
-  popCard (PlayStack [c] _)     = (Just c, PlayStack [] NotSplayed)
-  popCard (PlayStack [c1,c2] _) = (Just c1, PlayStack [c2] NotSplayed)
-  popCard (PlayStack (c:cs) ss) = (Just c, PlayStack cs ss)
 
 getSplayState :: PlayStack -> SplayState
 getSplayState (PlayStack _ ss) = ss

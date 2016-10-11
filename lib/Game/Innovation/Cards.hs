@@ -10,20 +10,20 @@ import qualified Data.Map as Map
 import Game.Innovation.Types
 import Game.Innovation.Actions.Basic
 
-getDeck :: Map Age Stack
+getDeck :: Map Age DrawStack
 getDeck = Map.fromList
-          [ (Age1, age1Cards)
-          , (Age2, age2Cards)
-          , (Age3, age3Cards)
-          , (Age4, age4Cards)
-          , (Age5, age5Cards)
-          , (Age6, age6Cards)
-          , (Age7, age7Cards)
-          , (Age8, age8Cards)
-          , (Age9, age9Cards)
-          , (Age10, age10Cards) ]
+          [ (Age1, DrawStack age1Cards)
+          , (Age2, DrawStack age2Cards)
+          , (Age3, DrawStack age3Cards)
+          , (Age4, DrawStack age4Cards)
+          , (Age5, DrawStack age5Cards)
+          , (Age6, DrawStack age6Cards)
+          , (Age7, DrawStack age7Cards)
+          , (Age8, DrawStack age8Cards)
+          , (Age9, DrawStack age9Cards)
+          , (Age10, DrawStack age10Cards) ]
 
-getCards :: Stack
+getCards :: RawStack
 getCards = age1Cards ++ age2Cards ++ age3Cards ++ age4Cards ++ age5Cards ++ age6Cards ++ age7Cards ++ age8Cards ++ age9Cards ++ age10Cards
 
 getCardsById :: Map CardId Card

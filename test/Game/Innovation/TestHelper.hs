@@ -10,16 +10,19 @@ import qualified Data.Map as Map
 import Game.Innovation.Types
 import Game.Innovation.Cards
 
-getAllCardsFromMap :: Map a Stack -> Stack
-getAllCardsFromMap = Map.foldr (++) []
+getAllCardsFromMap :: Stack a =>
+                      Map k a -> RawStack
+getAllCardsFromMap = Map.foldr (++) [] . Map.map getRawStack
 
-getAllCurrentCards :: Board -> Stack
-getAllCurrentCards (Board _ drawStacks dominateables players _) = cardsInDrawStacks ++ dominateables ++ cardsAtPlayers
+getAllCurrentCards :: Board -> RawStack
+getAllCurrentCards (Board _ drawStacks dominateables players _ _) = cardsInDrawStacks ++ (getRawStack dominateables) ++ cardsAtPlayers
   where
     cardsInDrawStacks = getAllCardsFromMap drawStacks
     cardsAtPlayers    = concatMap getAllCardsOfPlayer players
-    getAllCardsOfPlayer :: Player -> Stack
-    getAllCardsOfPlayer (Player _ stacks _ influence dominations hand) = getAllCardsFromMap stacks ++ influence ++ dominations ++ hand
+    getAllCardsOfPlayer :: Player -> RawStack
+    getAllCardsOfPlayer (Player _ stacks influence dominations hand) = getAllCardsFromMap stacks ++ (getRawStack influence) ++ dominationCards ++ (getRawStack hand)
+      where
+        dominationCards = undefined dominations
 
 exactlyAllCardsArePresent :: Board -> Bool
 exactlyAllCardsArePresent board = noCardsAreDuplicates && allCardsArePresent
