@@ -117,9 +117,7 @@ modifyPlayer userId f = do
   S.modify $ \b -> b {_players = modifiedPlayer : (filter (\p -> not $ p `hasUId` userId) (_players b))}
 
 drawNOfAnd :: Int -> Age -> ActionWR Board [Card]
-drawNOfAnd n age = mkA $ \userId ->  fmap concat (replicateM n
-                                                  (unpackMove
-                                                   (unpackAction (drawOfAnd age) userId)))
+drawNOfAnd n age = (fmap concat) (replicateM n (drawOfAnd age))
 
 -- | Try to draw an card of an specific age
 drawOfAnd :: Age -> ActionWR Board [Card]
@@ -132,9 +130,9 @@ drawOfAnd inputAge = mkA $ \userId -> do
       S.modify $ L.over L.drawStacks (Map.insert age rest)
       case cards of
         [card] -> do
-          logForMe ("draw the card " ++ show card) ("draw a card of age " ++ show age)
+          logForMe userId ("draw the card " ++ show card) ("draw a card of age " ++ show age)
           return [card]
-        []     -> logTODO "endgame..."
+        []     -> logTODO "tried to draw above Age10, endgame..."
         _      -> logFatal "should not be reacheable"
     _        -> logTODO "endgame..."
 
@@ -146,9 +144,7 @@ drawAnd = mkA $ \userId -> do
   userId `takes` drawOfAnd playersAge
 
 drawNAnd :: Int -> ActionWR Board [Card]
-drawNAnd n = mkA $ \userId -> fmap concat (replicateM n
-                                           (unpackMove
-                                            (unpackAction drawAnd userId)))
+drawNAnd n =(fmap concat) (replicateM n drawAnd)
 
 putIntoHand :: [Card] -> Action Board
 putIntoHand cards = mkA $ \userId ->

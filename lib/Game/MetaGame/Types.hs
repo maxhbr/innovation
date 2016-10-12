@@ -14,8 +14,9 @@ module Game.MetaGame.Types
        , BoardC (..), MachineState (..)
        , InnerMoveType, InnerMoveResult, runInnerMoveType
        , OuterMoveResult, runOuterMoveType
-       , MoveType, MoveResult, runMoveType
+       , MoveType, MoveResult, runMoveType, runMove
        , MoveWR (..), Move (..)
+       , ActionType (..), runActionType
        , ActionWR (..), Action (..), takes
        , ActionToken (..)
        , Turn (..)
@@ -56,9 +57,10 @@ import qualified Control.Lens as L
 sanitizeUserId :: String -> String
 sanitizeUserId = id -- TODO
 
-data UserId = U String
-            | Admin
-            deriving (Show,Eq,Read)
+data UserId
+  = U String
+  | Admin
+  deriving (Show,Eq,Read)
 mkUserId :: String -> UserId
 mkUserId = U . sanitizeUserId
 
@@ -88,11 +90,13 @@ class PlayerC player where
 --   | NONE
 --   deriving (Eq,Show,Enum,Ord,Bounded)
 
-type ViewerDependent = Reader UserId
+type ViewerDependent
+  = Reader UserId
 
 -- | A user dependent Log
 -- newtype Log = Log (UserId -> Text)
-newtype Log = Log (ViewerDependent Text)
+newtype Log
+  = Log (ViewerDependent Text)
 
 clog :: String -> Log
 clog = Log . return . T.pack
@@ -144,63 +148,6 @@ class Show a =>
                 Just owner -> T.pack . if isAdmin viewer || (viewer == owner)
                                        then show
                                        else showRestricted) a)
-
--- newtype View a = View { unView :: ReaderT Bool -- ^ whether the viewing user is by the context allowed to view
---                                           ( Reader UserId ) -- ^ the viewing user
---                                           a }
-
--- -- | Viewable
--- --    rules:
--- --      restrict a == restrict (restrict a)
--- --      showViewable False a == showViewable False (restrict a)
--- class Show a =>
---       Viewable a where
---   -- | This is how to to display some viewable thing
---   showViewable :: Bool -- ^ wheter viewer is owner or admin
---                -> a -- ^ data to view
---                -> String -- ^ result (used for log generation)
---   showViewable True a  = show a
---   showViewable False a = show (restrict _)
-
---   -- | this is the main method to implement
---   -- it returns, depending on the context, an restricted data
---   mkView' :: a -> View a
---   mkView' = View . return
-
---   -- | some structures know, who their owner is
---   getViewability :: UserId -> a -> Bool
---   getViewability _ _ = True
-
---   mkView :: a -> View a
---   mkView a = View $ do
---     wasAllowed <- R.ask
---     viewingUser <- lift R.ask
---     let newAllowed = isAdmin viewingUser
---                      || ( wasAllowed
---                           && ( getViewability viewingUser a ) )
---     return ( R.runReader
---              ( R.runReaderT
---                ( ( unView . mkView' ) a )
---                newAllowed )
---              viewingUser )
-
--- view :: Viewable a =>
---         UserId -> a -> a
--- view viewer a = let
---   v = ( unView . mkView ) a
---   in R.runReader ( R.runReaderT v True ) viewer
-
--- showUnsafe :: Viewable a =>
---               a -> String
--- showUnsafe = showViewable True
-
--- showDefensive :: Viewable a =>
---                  a -> String
--- showDefensive = showViewable False
-
--- mkLogV :: Viewable a =>
---           a -> Log
--- mkLogV a = Log $ \uid -> T.pack (showViewable (getViewability uid a) a)
 
 --------------------------------------------------------------------------------
 -- * Basic data and type declerations
@@ -349,9 +296,14 @@ runMoveType b0 cs = runInnerMoveType . runOuterMoveType b0 cs
 
 -- | The wrapper for a move
 -- a 'MoveWR' is a 'Move' which returns something
-newtype MoveWR board r = M {unpackMove :: MoveType board r}
+newtype MoveWR board r
+  = M {unpackMove :: MoveType board r}
 -- | a 'Move' does not calculate anything, it just modifies the state (+ failures + log)
-type Move board = MoveWR board ()
+type Move board
+  = MoveWR board ()
+
+runMove :: board -> [Answer] -> MoveWR board a -> MoveResult board a
+runMove b as = runMoveType b as . unpackMove
 
 instance BoardC board =>
          Monoid (Move board) where
@@ -360,13 +312,11 @@ instance BoardC board =>
 
 instance BoardC board =>
          Functor (MoveWR board) where
-  fmap f move = do
-        result <- move
-        return (f result)
+  fmap f move = move >>= (return . f)
 
 instance BoardC board =>
          Applicative (MoveWR board) where
-  pure r      = M $ return r
+  pure r = M $ return r
   (M getF) <*> (M getX) = M $ do
     r <- getF
     x <- getX
@@ -380,38 +330,38 @@ instance BoardC board =>
 --------------------------------------------------------------------------------
 -- ** Actions
 -- An action is something a player can take and it results in a move on the board
+type ActionType board
+  = ReaderT UserId -- ^ the user doing the action (also the logging user, ...)
+            ( MoveType board ) -- ^ the move behind the action
 
-newtype ActionWR board r = A { unpackAction :: UserId -> MoveWR board r }
+runActionType :: UserId -> ActionType board r -> MoveType board r
+runActionType = flip R.runReaderT
+
+newtype ActionWR board r = A { unpackAction :: ActionType board r }
 type Action board = ActionWR board ()
+
+takes :: UserId -> ActionWR board r -> MoveType board r
+takes uid = runActionType uid . unpackAction
 
 instance BoardC board =>
          Monoid (Action board) where
-  mempty                = A $ const mempty
-  mappend (A a1) (A a2) = A $ \uid -> a1 uid <> a2 uid
+  mempty                = A (return mempty)
+  mappend (A a1) (A a2) = A (a1 >> a2)
 
 instance BoardC board =>
          Functor (ActionWR board) where
-  fmap f action = do
-        result <- action
-        return (f result)
+  fmap f action = action >>= (return . f)
 
 instance BoardC board =>
          Applicative (ActionWR board) where
-  pure r = A $ const $ return r
-  (A getF) <*> (A getX) = A $ \userId -> do
-    f <- getF userId
-    x <- getX userId
-    return $ f x
+  pure r = A (return r)
+  (A getF) <*> (A getX) = A (getF <*> getX)
 
 instance BoardC board =>
          Monad (ActionWR board) where
-  return t    = A $ const $ return t
-  (A t) >>= f = A $ \userId -> t userId >>= ((\f -> f userId) . unpackAction . f)
+  return t    = A (return t)
+  (A t) >>= f = A (t >>= (unpackAction . f))
 
-
-takes :: BoardC board =>
-         UserId -> ActionWR board a -> MoveType board a
-takes uid act = unpackMove (unpackAction act uid)
 
 --------------------------------------------------------------------------------
 -- ** ActionTokens
@@ -432,11 +382,12 @@ class (BoardC board, Eq actionToken, Read actionToken, Show actionToken) =>
 
 -- | A turn is a action which is taken by some player
 -- TODO: Might be better called 'Action' since "one has two actions per turn"
-data Turn board = forall actionToken.
-                  ActionToken board actionToken =>
-                  Turn { getActingPlayer :: UserId
-                       , getActionToken :: actionToken
-                       , answers :: [Answer] }
+data Turn board
+  = forall actionToken.
+    ActionToken board actionToken =>
+    Turn { getActingPlayer :: UserId
+         , getActionToken :: actionToken
+         , answers :: [Answer] }
 
 instance Show (Turn board) where
   show (Turn Admin actionToken choices)      = show actionToken ++ show choices
@@ -450,12 +401,14 @@ instance Eq (Turn board) where
 --------------------------------------------------------------------------------
 -- ** Game
 
-type History board = [Turn board]
+type History board
+  = [Turn board]
 
 -- | A game consists of all the turns, i.e. taken actions, in chronological order
 -- the last taken action is the head
-newtype Game board = G (History board)
-                   deriving (Show)
+newtype Game board
+  = G (History board)
+  deriving (Show)
 
 instance Monoid (Game board) where
   mempty                = G []

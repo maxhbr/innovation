@@ -4,11 +4,10 @@ import Development.GitRev
 
 gitInfo :: IO ()
 gitInfo = putStrLn (concat [ "[", $(gitBranch), "@", $(gitHash)
-                           , " (", $(gitCommitDate), ")"
-                           , " (", $(gitCommitCount), " commits in HEAD)"
-                           , dirty, "] "])
+                           , dirty
+                           , " (", $(gitCommitDate), ")", "] "])
   where
-    dirty | $(gitDirty) = " (unclean)"
+    dirty | $(gitDirty) = " __unclean__"
           | otherwise   = ""
 
 main :: IO ()

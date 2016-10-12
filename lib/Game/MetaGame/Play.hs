@@ -14,6 +14,8 @@ import           Control.Monad.Trans.Writer (WriterT)
 import qualified Control.Monad.Trans.Writer as W
 import           Control.Monad.Trans.Except (ExceptT)
 import qualified Control.Monad.Trans.Except as E
+import           Control.Monad.Trans.Reader (Reader, ReaderT)
+import qualified Control.Monad.Trans.Reader as R
 import           Control.Monad.Trans.State.Lazy (State, StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
@@ -25,13 +27,13 @@ unpackToken :: ActionToken board actionToken =>
                actionToken -> UserId -> MoveWR board ()
 unpackToken token userId = do
   b <- isAllowedFor token userId
-  if b
-    then unpackAction (getAction token) userId
-    else M . logError $ "user " ++ show userId ++ " is not allowed to " ++ show token
+  M $ if b
+      then userId `takes` (getAction token)
+      else logError ("user " ++ show userId ++ " is not allowed to " ++ show token)
 
 generateNextTurnMessage :: BoardC board =>
                            board -> InnerMoveType board board
-generateNextTurnMessage = undefined
+generateNextTurnMessage = undefined -- TODO
 
 -- | run a turn on a board
 -- this also advances the player order, i.e. consumes an 'action'

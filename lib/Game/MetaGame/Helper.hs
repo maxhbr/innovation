@@ -31,28 +31,34 @@ import Game.MetaGame.Types
 liftFromInner :: InnerMoveType s a -> MoveType s a
 liftFromInner = lift . lift . lift
 
-log' :: (Monad m, MonadTrans t) =>
+clog' :: (Monad m, MonadTrans t) =>
         String -> t (WriterT Log m) ()
-log' = lift . W.tell . clog
+clog' = lift . W.tell . clog
 
 -- ** helper for logging
 log :: BoardC s =>
        String -> MoveType s ()
-log text = do
-    loggingUser <- getCurrentPlayer
-    liftFromInner . log' $
-      show loggingUser ++ ": " ++ text
+log text = liftFromInner . clog' $ "... " ++ text
+
+logM :: BoardC s =>
+        String -> ActionType s ()
+logM msg = do
+  uid <- R.ask
+  lift (log (show uid ++ ": " ++ msg))
+
+-- logBy :: BoardC s =>
+--          UserId -> String -> MoveType s ()
+-- logBy loggingUser text = liftFromInner . clog' $
+--                        show loggingUser ++ ": " ++ text
 
 logForMe :: BoardC s =>
-            String -> String -> MoveType s ()
-logForMe textPrivate textPublic = do
-    loggingUser <- getCurrentPlayer
-    liftFromInner . lift . W.tell . Log $ do
-      viewer <- R.ask
-      return (T.pack (show loggingUser ++ ": " ++
-                      if viewer == loggingUser || viewer == Admin
-                      then textPrivate
-                      else textPublic))
+            UserId -> String -> String -> MoveType s ()
+logForMe loggingUser textPrivate textPublic = liftFromInner . lift . W.tell . Log $ do
+  viewer <- R.ask
+  return (T.pack (show loggingUser ++ ": " ++
+                  if viewer == loggingUser || viewer == Admin
+                  then textPrivate
+                  else textPublic))
 
 -- | logWarn prints a warning to the log
 logWarn :: BoardC s =>
@@ -61,7 +67,13 @@ logWarn = liftFromInner . innerLogWarn
 
 innerLogWarn :: BoardC s =>
                  String -> InnerMoveType s ()
-innerLogWarn warn = log' $ "Warning: " ++ warn
+innerLogWarn warn = clog' $ "Warning: " ++ warn
+
+innerLogError :: BoardC s =>
+                 String -> InnerMoveType s a
+innerLogError error = do
+  clog' $ "Error: " ++ error
+  E.throwE $ T.pack error
 
 -- | logError logs an error and throws the exception
 -- this ends the game
@@ -69,11 +81,11 @@ logError :: BoardC s =>
             String -> MoveType s a
 logError = liftFromInner . innerLogError
 
-innerLogError :: BoardC s =>
-                 String -> InnerMoveType s a
-innerLogError error = do
-  log' $ "Error: " ++ error
-  E.throwE $ T.pack error
+logErrorM :: BoardC s =>
+             String -> ActionType s a
+logErrorM err = do
+  uid <- R.ask
+  (lift . logError) (show uid ++ ": " ++ err)
 
 -- | logFatal logs an fatal and throws the exception
 -- this ends the game
@@ -84,7 +96,7 @@ logFatal = liftFromInner . innerLogFatal
 innerLogFatal :: BoardC s =>
                  String -> InnerMoveType s a
 innerLogFatal fatal = do
-  log' $ "Fatal: " ++ fatal
+  clog' $ "Fatal: " ++ fatal
   E.throwE $ T.pack fatal
 
 -- | logInfo
@@ -94,8 +106,7 @@ logInfo = liftFromInner . innerLogInfo
 
 innerLogInfo :: BoardC s =>
                 String -> InnerMoveType s ()
-innerLogInfo info = do
-  log' $ "Info: " ++ info
+innerLogInfo info = clog' $ "Info: " ++ info
 
 -- | logTODO logs an unimplemented thing and throws the exception
 -- this ends the game
@@ -106,14 +117,10 @@ logTODO = liftFromInner . innerLogTODO
 innerLogTODO :: BoardC s =>
                 String -> InnerMoveType s a
 innerLogTODO todo = do
-  log' $ "TODO: " ++ todo
+  clog' $ "TODO: " ++ todo
   E.throwE $ T.pack $ "TODO: " ++ todo
 
 -- ** helper for defining Moves and MoveType things
-
-getCurrentPlayer :: BoardC b =>
-                    MoveType b UserId
-getCurrentPlayer = S.gets getCurrentPlayer'
 
 getMachineState :: BoardC b =>
                    MoveType b MachineState
@@ -129,19 +136,42 @@ logMachineState = getMachineState >>= (log . show)
 
 -- ** helper for defining Actions
 
-onlyAdminIsAllowed :: BoardC board =>
-                      Action board -> Action board
-onlyAdminIsAllowed (A t) = A $ \case
-  Admin -> t Admin
-  _     -> M $ logError "Action was not authorized"
+-- liftToAType :: MoveWR board r -> ActionType board r
+-- liftToAType = lift . unpackMove
 
-onlyCurrentPlayerIsAllowed :: BoardC board =>
-                              Action board -> Action board
-onlyCurrentPlayerIsAllowed (A t) = A $ \userId -> M $ do
-  currentPlayer <- S.gets getCurrentPlayer'
-  if (currentPlayer == userId || userId == Admin)
-    then logError $ "Player " ++ show userId ++ " is not allowed to take an action"
-    else unpackMove $ t userId
+-- -- | make an action
+-- mToA :: MoveWR board r -> ActionWR board r
+-- mToA = A . liftToAType
 
-mkA :: (UserId -> MoveType board r) -> ActionWR board r
-mkA f = A $ \userId -> M $ f userId
+-- | make an action which is only allowed to be taken by admin
+-- it is by definition user independent
+mkAdminA :: BoardC board =>
+            MoveWR board r -> ActionWR board r
+mkAdminA t = A $ do
+  uid <- R.ask
+  case uid of
+    Admin -> (lift . unpackMove) t
+    _     -> logErrorM "Action was not authorized"
+
+-- | make an action from an user-dependent MoveType-thing
+mkA :: BoardC board =>
+       (UserId -> MoveType board r) -> ActionWR board r
+mkA f = A $ do
+  uid <- R.ask
+  lift (f uid)
+
+-- | create an constant action which does not depend internally on the acting user
+mkConstA :: BoardC board =>
+            MoveType board r -> ActionWR board r
+mkConstA = A . lift
+
+-- | create an action which is only allowed to be taken by the currently action user
+-- this might be unnecessary since 'play' does implicitly satisfy this
+mkCurPlayerA :: BoardC board =>
+                MoveType board r -> ActionWR board r
+mkCurPlayerA t = A $ do
+  uid <- R.ask
+  currentPlayer <- (lift . S.gets) getCurrentPlayer'
+  if (currentPlayer == uid || uid == Admin)
+    then logErrorM "not allowed to take an action"
+    else lift t
