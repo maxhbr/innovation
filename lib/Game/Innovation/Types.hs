@@ -234,7 +234,7 @@ instance PlayerC Player where
 
 instance View Player where
   extractOwner = Just . getUId
-  view p = undefined
+  view = view . _playerId  
   -- pp p = "** Player: " ++ pp (_playerId p) ++ ":\n"
   --        ++ pp (_stacks p)
   --        ++ pp (_splayStates p)

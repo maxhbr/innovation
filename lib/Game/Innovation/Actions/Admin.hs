@@ -11,8 +11,10 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.List as List
 import           Data.Maybe
 import           Data.Monoid
+import           Control.Monad
 import           Control.Monad.Trans.Identity
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Writer (WriterT)
@@ -36,12 +38,10 @@ setDeck :: Move Board
 setDeck = M $ S.modify (\board -> board{ _drawStacks=Cards.getDeck })
 
 drawDominations :: Move Board
-drawDominations = M $
-                  mapM_ (\age -> do
-                            (d,ds) <- S.gets (popCards 1 . fromJust . (Map.lookup age) . (L.view L.drawStacks))
-                            S.modify (L.over L.dominateables (pushCards d))
-                            S.modify (L.over L.drawStacks (Map.insert age ds))
-                        ) ages
+drawDominations = M $ mapM_ (\age -> do
+                                (d,ds) <- S.gets (popCards 1 . fromJust . Map.lookup age . L.view L.drawStacks)
+                                S.modify (L.over L.dominateables (pushCards d))
+                                S.modify (L.over L.drawStacks (Map.insert age ds))) ages
 
 shuffle :: Int -> Move Board
 shuffle seed = M $ do
@@ -64,19 +64,25 @@ determineInitialPlayerOrder :: Move Board
 determineInitialPlayerOrder = M $ do
   ps <- L.use L.players
   L.playerOrder L..= map getUId ps -- FALSE! / TODO
-  L.machineState L..= WaitForTurn
 
 handOutInitialCards :: Move Board
-handOutInitialCards = (M $ do
-                          ps <- L.use L.players
-                          if length ps >= 2 && length ps <= 4
-                            then do
-                            logTODO "give players for their first cards"
-                            -- mapM_ (unpackMove . unpackAction (drawNOfAnd 2 Age1) . getUId) ps
-                            logTODO "ask players for their first card"
-                            logTODO "play their first cards"
-                            else logError "Numer of players is not valid"
-                      ) >> determineInitialPlayerOrder
+handOutInitialCards = do
+  M $ do
+     ps <- L.use L.players
+     log "determin first cards"
+     initialCards <- mapM ((\uid -> fmap (\l -> (uid,l))
+                                    (uid `takes` drawNOfAnd 2 Age1)) . getUId)
+                          ps
+     log "ask for first card"
+     answeredQuestions <- mapM (\(uid,cs) -> fmap (\[c] -> (uid, List.partition (==c) cs))
+                                                  ((uid `chooseOneOf` "the cards, to be played out first") cs))
+                               initialCards
+     log "all questions for first card were answered, play them"
+     mapM_ (\(uid,(playCards,handCards)) -> do
+               uid `takes` putIntoPlay playCards
+               uid `takes` putIntoHand handCards) answeredQuestions
+  determineInitialPlayerOrder
+  M $ L.machineState L..= WaitForTurn
 
 --------------------------------------------------------------------------------
 -- Admin actions
@@ -104,18 +110,15 @@ instance ActionToken Board StartGame where
   isAllowedFor _ _ = return False
 
   getAction (StartGame seed) = mkAdminA $ do
+    M $ log "start the game"
+    M $ do
+      ps <- L.use L.players
+      unless (length ps >= 2 && length ps <= 4)
+        (logError "Numer of players is not valid")
     setDeck
     shuffle seed
     drawDominations
     handOutInitialCards
-    -- logM "Start game"
-                               --   ((liftToAType . M) ( do
-                               --                    -- play chosen cards
-                               --                    -- determine starting player
-                               --                    ps <- L.use L.players
-                               --                    L.playerOrder L..= map getUId ps -- FALSE!
-                               --                    L.machineState L..= WaitForTurn
-                               --               ))
 
 -- data DropPlayer = DropPlayer UserId
 --                 deriving (Eq, Show, Read)

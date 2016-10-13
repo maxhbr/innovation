@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 module Game.Innovation.TestHelper
        where
 
@@ -20,9 +21,11 @@ getAllCurrentCards (Board _ drawStacks dominateables players _ _) = cardsInDrawS
     cardsInDrawStacks = getAllCardsFromMap drawStacks
     cardsAtPlayers    = concatMap getAllCardsOfPlayer players
     getAllCardsOfPlayer :: Player -> RawStack
-    getAllCardsOfPlayer (Player _ stacks influence dominations hand) = getAllCardsFromMap stacks ++ (getRawStack influence) ++ dominationCards ++ (getRawStack hand)
+    getAllCardsOfPlayer (Player _ stacks influence (Dominations ds) hand) = getAllCardsFromMap stacks ++ (getRawStack influence) ++ dominationCards ++ (getRawStack hand)
       where
-        dominationCards = undefined dominations
+        dominationCards = concatMap (\case
+                                        AgeDomination c -> [c]
+                                        _               -> []) ds
 
 exactlyAllCardsArePresent :: Board -> Bool
 exactlyAllCardsArePresent board = noCardsAreDuplicates && allCardsArePresent

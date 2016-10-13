@@ -91,18 +91,18 @@ spec = let
       length (L.view L.players state) `shouldBe` 2
       L.view L.machineState state `shouldNotBe` Prepare
 
-    let startedGameCooseInitalCard = startedGame <>
-                                     mkG [ U "user1" `chooses` (`Answer` [1])
-                                         , U "user2" `chooses` (`Answer` [0])]
+    let startedGameCooseInitalCard = startedGame
+                                     <=> (U "user2" `chooses` (`Answer` [0]))
+                                     <=> (U "user1" `chooses` (`Answer` [1]))
     it "just addPlayers + StartGame + choose" $ do
       (state, _) <- isSuccessfullGameWithoutWinner startedGameCooseInitalCard
       length (L.view L.players state) `shouldBe` 2
       L.view L.machineState state `shouldNotBe` Prepare
       exactlyAllCardsArePresent state `shouldBe` True
 
-    let someActionsTaken = startedGame <>
-                           mkG [ U "user2" `does` Draw
-                               , U "user1" `does` Draw]
+    let someActionsTaken = startedGameCooseInitalCard <>
+                           mkG [ U "user1" `does` Draw
+                               , U "user2" `does` Draw]
     it "just addPlayers + StartGame + draw" $ do
       (state, _) <- isSuccessfullGameWithoutWinner someActionsTaken
       length (L.view L.players state) `shouldBe` 2
@@ -110,14 +110,14 @@ spec = let
       exactlyAllCardsArePresent state `shouldBe` True
 
     let drawManyCards = someActionsTaken <>
-                        mkG [ U "user1" `does` Draw
-                            , U "user2" `does` Draw
-                            , U "user2" `does` Draw
+                        mkG [ U "user2" `does` Draw
                             , U "user1" `does` Draw
                             , U "user1" `does` Draw
                             , U "user2" `does` Draw
                             , U "user2" `does` Draw
-                            , U "user1" `does` Draw]
+                            , U "user1" `does` Draw
+                            , U "user1" `does` Draw
+                            , U "user2" `does` Draw]
     it "just addPlayers + StartGame + drawMany" $ do
       (state, _) <- isSuccessfullGameWithoutWinner drawManyCards
       length (L.view L.players state) `shouldBe` 2

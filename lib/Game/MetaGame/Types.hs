@@ -10,7 +10,7 @@ module Game.MetaGame.Types
        , Log (..), clog, viewLog
        , View (..)
        , PlayerC (..)
-       , Inquiry (..), Answer (..)
+       , InqRestr (..), Inquiry (..), Answer (..)
        , BoardC (..), MachineState (..)
        , InnerMoveType, InnerMoveResult, runInnerMoveType
        , OuterMoveResult, runOuterMoveType
@@ -63,6 +63,12 @@ data UserId
   deriving (Show,Eq,Read)
 mkUserId :: String -> UserId
 mkUserId = U . sanitizeUserId
+
+instance Ord UserId where
+  compare Admin Admin   = EQ
+  compare Admin (U _)   = LT
+  compare (U _) Admin   = GT
+  compare (U u1) (U u2) = compare u1 u2
 
 isAdmin :: UserId -> Bool
 isAdmin Admin = True
@@ -149,6 +155,8 @@ class Show a =>
                                        then show
                                        else showRestricted) a)
 
+instance View UserId
+
 --------------------------------------------------------------------------------
 -- * Basic data and type declerations
 --------------------------------------------------------------------------------
@@ -159,11 +167,18 @@ class Show a =>
 -- specific user is required. This question is represented by an 'Inquiry'.
 -- This can be answerd by something of the type 'Choice'.
 
+newtype InqRestr
+  = InqRestr ([Int] -> Bool)
+
+instance Monoid InqRestr where
+  mempty                                = InqRestr (const True)
+  mappend (InqRestr ir1) (InqRestr ir2) = InqRestr (\cs -> (ir1 cs) && (ir2 cs))
+
 data Inquiry a
   = Inquiry { askedPlayer :: UserId -- ^ the user asked to answer the question
             , inquiryQuestion :: String -- ^ the verbal version of the question
             , inquiryOptions :: [a] -- ^ possible options to choose from
-            , checkConfigurationValiadity :: [Int] -> Bool } -- ^ restrictions to the possible answers (programatically)
+            , answerRestrictions :: InqRestr } -- ^ restrictions to the possible answers (programatically)
 
 instance Eq a =>
          Eq (Inquiry a) where
@@ -437,11 +452,11 @@ answerNo :: UserId -> Answer
 answerNo uid = uid `Answer` []
 
 mkG :: [UserInput board] -> Game board
-mkG = G . accumulateInput id
+mkG = G . accumulateInput id . reverse
   where
     accumulateInput :: (Turn board -> Turn board) -> [UserInput board] -> [Turn board]
     accumulateInput cs (UChoice f : uis) = accumulateInput (f . cs) uis
-    accumulateInput cs (UTurn t : uis)   = accumulateInput id uis ++ [cs t]
+    accumulateInput cs (UTurn t : uis)   = (cs t) : accumulateInput id uis
     accumulateInput _  []                = []
 
 (<=>) :: Game board -> UserInput board -> Game board
