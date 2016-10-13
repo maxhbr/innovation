@@ -4,9 +4,11 @@
 module Game.Innovation.Rules
     where
 
+import           Prelude hiding (log)
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.Maybe
+import           Control.Arrow ((&&&))
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Writer (WriterT)
 import qualified Control.Monad.Trans.Writer as W
@@ -100,3 +102,24 @@ getProductionsForStack (PlayStack (c:cs) splayState) = getProductionsForStack (P
     getLenses SplayedRight = [ L.tlProd, L.blProd ]
     getLenses SplayedUp    = [ L.blProd, L.bcProd, L.brProd ]
     getLenses NotSplayed   = []
+
+
+getInfluence :: Player -> Int
+getInfluence (Player _ _ (Influence is) _ _) = sum (map (fromEnum . _age) is)
+
+--------------------------------------------------------------------------------
+-- Getter for visible productions and related symbols
+--------------------------------------------------------------------------------
+
+endGame :: MoveWR Board a
+endGame = M $ do
+  log "endgame"
+  ps <- L.use L.players
+  let influences = map (_playerId &&& getInfluence) ps
+  let maxInfluence = maximum (map snd influences)
+  log $ "greatest influnce is: " ++ show maxInfluence
+  let winner = head [uid | (uid,infl) <- influences
+                         , infl == maxInfluence] -- TODO
+  S.modify (setMachineState' (GameOver winner))
+  S.get >>= (lift . lift . E.throwE)
+

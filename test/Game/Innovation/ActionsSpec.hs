@@ -125,14 +125,14 @@ spec = let
       exactlyAllCardsArePresent state `shouldBe` True
 
     let playCardNotInHand = someActionsTaken <=>
-                           (U "user1" `does` Play (CardId "[Age1: XXX]"))
+                           (U "user2" `does` Play (CardId "[Age1: XXX]"))
     it "just addPlayers + StartGame + draw + playStupid" $ do
       playResult <- isFailedGame playCardNotInHand
       let log = (viewLog Admin . extractLog) playResult
       T.unpack log `shouldContain` "Error"
 
     let playValidCard = someActionsTaken <=>
-                        (U "user1" `does` Play (CardId "[Age1: Sailing]"))
+                        (U "user2" `does` Play (CardId "[Age10: Databases]"))
     it "just addPlayers + StartGame + draw + play" $ do
       (state, _) <- isSuccessfullGameWithoutWinner playValidCard
       length (L.view L.players state) `shouldBe` 2

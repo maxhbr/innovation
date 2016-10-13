@@ -32,7 +32,6 @@ import           Game.Innovation.Rules
 import           Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
 
-
 pushCards :: Stack a =>
              [Card] -> a -> a
 pushCards cs = onRawStack (cs ++)
@@ -134,7 +133,7 @@ drawOfAnd inputAge = mkA $ \userId -> do
           return [card]
         []     -> logTODO "tried to draw above Age10, endgame..."
         _      -> logFatal "should not be reacheable"
-    _        -> logTODO "endgame..."
+    _        -> unpackMove endGame
 
 -- | Try to draw an card of current age
 drawAnd :: ActionWR Board [Card]
