@@ -50,6 +50,8 @@ logM msg = do
 --          UserId -> String -> MoveType s ()
 -- logBy loggingUser text = liftFromInner . clog' $
 --                        show loggingUser ++ ": " ++ text
+loggs :: UserId -> String -> MoveType s ()
+loggs loggingUser text = liftFromInner . clog' $ show loggingUser ++ ": " ++ text
 
 logForMe :: BoardC s =>
             UserId -> String -> String -> MoveType s ()

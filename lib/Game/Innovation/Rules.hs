@@ -39,18 +39,27 @@ getPlayerById uid = do
   case playersWithId of
     [p] -> return p
     []  -> logError "player not found"
-    _   -> logError "multiple players found, with the same id"
+    _   -> logFatal "multiple players found, with the same id"
+
+getUidsWith :: (Player -> Bool) -> MoveType Board [UserId]
+getUidsWith t = do
+  ps <- fmap (filter t) (L.use L.players)
+  return (map _playerId ps)
+
 
 --------------------------------------------------------------------------------
 -- Getter for ages
 --------------------------------------------------------------------------------
 
-getPlayersAge :: Player -> Age
-getPlayersAge player = let
+ageOf :: Player -> Age
+ageOf player = let
   currentAges = (map (_age . head . getRawStack) . filter (not . isEmptyStack) . Map.elems) $ _playStacks player
   in if currentAges /= []
      then maximum currentAges
      else Age1
+
+getAgeOf :: UserId -> MoveType Board Age
+getAgeOf = fmap ageOf . getPlayerById
 
 getDrawAge :: Age -> MoveType Board (Maybe Age)
 getDrawAge inputAge = do
@@ -62,36 +71,25 @@ getDrawAge inputAge = do
            then Nothing
            else Just $ head agesAboveWithCards
 
-getPlayersDrawAge :: Player -> MoveType Board (Maybe Age)
-getPlayersDrawAge player = do
-  let playersAge = getPlayersAge player
-  getDrawAge playersAge
+getDrawAgeOf :: UserId -> MoveType Board (Maybe Age)
+getDrawAgeOf uid = getAgeOf uid >>= getDrawAge
 
 --------------------------------------------------------------------------------
 -- Getter for visible productions and related symbols
 --------------------------------------------------------------------------------
 
-getSymbols :: Player -> Map Symbol Int
-getSymbols player = Map.fromListWith (+) $
-                    zip playersSymbolsList (repeat 1)
-  where
-    playersSymbolsList = map _prodSymbol $
-                         filter isSymbolProduction $
-                         getProductions player
+listToFrequency :: Ord a =>
+                   [a] -> Map a Int
+listToFrequency list = Map.fromListWith (+) (zip list (repeat 1))
 
-getProductions :: Player -> [Production]
-getProductions player = concatMap (`getProductionsForColor` player) colors
+productionsForStack :: PlayStack -> Map Symbol Int
+productionsForStack = listToFrequency . map _prodSymbol . filter isSymbolProduction . productionsForStack'
 
-getProductionsForColor :: Color -> Player -> [Production]
-getProductionsForColor color player = getProductionsForStack stackOfColor
-  where
-    stackOfColor      = getStackFromMapBy color $ L.view L.playStacks player
-
-getProductionsForStack :: PlayStack -> [Production]
-getProductionsForStack (PlayStack [] _)              = []
-getProductionsForStack (PlayStack [card] _)          = map ((\v -> v (_productions card)) . L.view)
-                                                       [ L.tlProd, L.blProd, L.bcProd, L.brProd ]
-getProductionsForStack (PlayStack (c:cs) splayState) = getProductionsForStack (PlayStack [c] splayState) ++ prodOfInactive
+productionsForStack' :: PlayStack -> [Production]
+productionsForStack' (PlayStack [] _)              = []
+productionsForStack' (PlayStack [card] _)          = map ((\v -> v (_productions card)) . L.view)
+                                                     [ L.tlProd, L.blProd, L.bcProd, L.brProd ]
+productionsForStack' (PlayStack (c:cs) splayState) = productionsForStack' (PlayStack [c] splayState) ++ prodOfInactive
   where
     prodOfInactive = concatMap (getVisible splayState) cs
 
@@ -103,16 +101,26 @@ getProductionsForStack (PlayStack (c:cs) splayState) = getProductionsForStack (P
     getLenses SplayedUp    = [ L.blProd, L.bcProd, L.brProd ]
     getLenses NotSplayed   = []
 
+productionsForColorOf :: Color -> Player -> Map Symbol Int
+productionsForColorOf color player = let
+  stackOfColor = getStackFromMapBy color (L.view L.playStacks player)
+  in productionsForStack stackOfColor
 
-getInfluence :: Player -> Int
-getInfluence (Player _ _ (Influence is) _ _) = sum (map (fromEnum . _age) is)
+productionsOf :: Player -> Map Symbol Int
+productionsOf player = Map.unionsWith (+) (map (`productionsForColorOf` player) colors)
+
+getProductionsOf :: UserId -> MoveType Board (Map Symbol Int)
+getProductionsOf uid = do
+  player <- getPlayerById uid
+  return (productionsOf player)
+
+getProductionsForSymbolOf :: UserId -> Symbol -> MoveType Board Int
+getProductionsForSymbolOf uid symb = fmap (Map.findWithDefault 0 symb) (getProductionsOf uid)
 
 --------------------------------------------------------------------------------
--- Getter for visible productions and related symbols
---------------------------------------------------------------------------------
 
-endGame :: MoveWR Board a
-endGame = M $ do
+doEndGame :: MoveWR Board a
+doEndGame = M $ do
   log "endgame"
   ps <- L.use L.players
   let influences = map (_playerId &&& getInfluence) ps
@@ -123,3 +131,17 @@ endGame = M $ do
   S.modify (setMachineState' (GameOver winner))
   S.get >>= (lift . lift . E.throwE)
 
+--------------------------------------------------------------------------------
+
+runDogma :: Dogma -> Action Board
+runDogma dogma = let
+  symb = getDSymbol dogma
+  -- determineAffected =
+  -- determineAffected = undefined
+  comperator callersNum = case dogma of
+    Dogma{}   -> (>= callersNum)
+    IDemand{} -> (< callersNum)
+  in mkA $ \uid -> do
+    callersNum <- getProductionsForSymbolOf uid symb
+    affected <- undefined -- TODO
+    mapM_ undefined affected -- TODO

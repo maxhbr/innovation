@@ -62,6 +62,10 @@ instance Show Dogma where
   show (Dogma s d _)   = "[" ++ show s ++ "] " ++ d
   show (IDemand s d _) = "[" ++ show s ++ "] " ++ d
 
+getDSymbol :: Dogma -> Symbol
+getDSymbol (Dogma symb _ _)   = symb
+getDSymbol (IDemand symb _ _) = symb
+
 --------------------------------------------------------------------------------
 -- Cards
 --------------------------------------------------------------------------------
@@ -95,16 +99,18 @@ data Card
          , _productions :: Productions
          , _dogmas      :: [Dogma] }
   | CardBackside Age
-  deriving (Show)
 
 data CardId = CardId { unpackCardId :: String }
             deriving (Eq, Show, Read)
+
+instance Show Card where
+  show Card{ _title=t, _age=a } = "[" ++ show a ++ ": " ++ t ++ "]"
 
 instance Ord CardId where
   compare (CardId c1) (CardId c2) = compare c1 c2
 
 getCId :: Card -> CardId
-getCId Card{ _title=t, _age=a } = CardId $ "[" ++ show a ++ ": " ++ t ++ "]"
+getCId = CardId . show
 
 instance Eq Card where
   c1 == c2 = getCId c1 == getCId c2
@@ -224,7 +230,6 @@ data Player
            , _influence   :: Influence
            , _dominations :: Dominations
            , _hand        :: Hand }
-  deriving (Show)
 
 instance Eq Player where
   p1 == p2 = _playerId p1 == _playerId p2
@@ -232,9 +237,28 @@ instance Eq Player where
 instance PlayerC Player where
   getUId = _playerId
 
+getInfluence :: Player -> Int
+getInfluence (Player _ _ (Influence is) _ _) = sum (map (fromEnum . _age) is)
+
+getDominationCount :: Player -> Int
+getDominationCount (Player _ _ _ (Dominations ds) _) = length ds
+
+instance Show Player where
+  show p@(Player uid ps inf doms hand) = let
+    influence = show (getInfluence p)
+    numOfDominations = show (getDominationCount p)
+    numOfHandCards = show (getStackSize hand)
+    in "[Player: " ++ show uid
+       ++ " handCards: " ++ numOfHandCards
+       ++ " infl: " ++ influence
+       ++ " doms: " ++ numOfDominations ++ "]"
+
 instance View Player where
   extractOwner = Just . getUId
-  view = view . _playerId  
+
+  -- showRestricted p@(Player uid ps inf doms hand) = undefined
+
+  view = view . _playerId
   -- pp p = "** Player: " ++ pp (_playerId p) ++ ":\n"
   --        ++ pp (_stacks p)
   --        ++ pp (_splayStates p)

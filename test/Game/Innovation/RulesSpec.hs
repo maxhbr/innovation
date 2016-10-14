@@ -10,32 +10,35 @@ import Game.MetaGame
 import Game.Innovation.Types
 import Game.Innovation.Rules
 
+pShouldBe :: Map Symbol Int -> Map Symbol Int -> IO ()
+pShouldBe m1 m2 = mapM_ (\s -> (Map.findWithDefault 0 s m1 `shouldBe` Map.findWithDefault 0 s m2)) symbols
+
 spec :: Spec
 spec = do
-  describe "getProductionsForStack" $ do
+  describe "productionsForStack" $ do
     it "empty stack has no production" $ do
-      getProductionsForStack (PlayStack [] NotSplayed) `shouldBe` []
+      productionsForStack (PlayStack [] NotSplayed) `pShouldBe` (Map.fromList [])
     it  "singleton stack has productions from card" $ do
-      getProductionsForStack (PlayStack [Card "C1" Blue Age1 (Productions None None None None) []] NotSplayed)
-        `shouldBe` [None,None,None,None]
+      let productions = productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions None None None None) []] NotSplayed)
+      productions `pShouldBe` (Map.fromList [])
       mapM_ (\splayState ->
-              getProductionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) []] splayState)
-                `shouldBe` [Produce Crown,None,Produce Tree,Produce Clock]) [(minBound :: SplayState) ..]
+              productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) []] splayState)
+                `pShouldBe` (Map.fromList [(Crown,1),(Tree,1),(Clock,1)])) [(minBound :: SplayState) ..]
     it  "stack splayed left productions" $
-      getProductionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) []
-                                        ,Card "C2" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) []
-                                        ,Card "C3" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) []] SplayedLeft)
-                `shouldBe` [Produce Crown,None,Produce Tree,Produce Clock,Produce Castle,Produce Castle]
+      productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) []
+                                     ,Card "C2" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) []
+                                     ,Card "C3" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) []] SplayedLeft)
+                `pShouldBe` (Map.fromList [(Crown,1),(Tree,1),(Clock,1),(Castle,2)])
     it  "stack splayed right productions" $
-      getProductionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) []
-                                        ,Card "C2" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) []
-                                        ,Card "C3" Blue Age1 (Productions (Produce Crown) (Produce Tree) None (Produce Castle)) []] SplayedRight)
-                `shouldBe` [Produce Crown,None,Produce Tree,Produce Clock,Produce Crown,None,Produce Crown,Produce Tree]
+      productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) []
+                                     ,Card "C2" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) []
+                                     ,Card "C3" Blue Age1 (Productions (Produce Crown) (Produce Tree) None (Produce Castle)) []] SplayedRight)
+                `pShouldBe` (Map.fromList [(Crown,3),(Tree,2),(Clock,1)])
     it  "stack splayed up productions" $
-      getProductionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) []
-                                        ,Card "C2" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) []
-                                        ,Card "C3" Blue Age1 (Productions (Produce Crown) (Produce Tree) None (Produce Castle)) []] SplayedUp)
-                `shouldBe` [Produce Crown,None,Produce Tree,Produce Clock,None,Produce Tree,Produce Castle,Produce Tree,None,Produce Castle]
+      productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) []
+                                     ,Card "C2" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) []
+                                     ,Card "C3" Blue Age1 (Productions (Produce Crown) (Produce Tree) None (Produce Castle)) []] SplayedUp)
+                `pShouldBe` (Map.fromList [(Crown,1),(Tree,3),(Clock,1),(Castle,2)])
     it  "stack splayed up symbol counts" $ do
       let player = Player { _playerId = U "test"
                           , _playStacks = Map.fromList [(Blue
@@ -45,11 +48,11 @@ spec = do
                           , _influence = emptyStack
                           , _dominations = Dominations []
                           , _hand = emptyStack }
-      let symbols = getSymbols player
-      Map.lookup Crown symbols `shouldBe` Just 1
-      Map.lookup Tree symbols `shouldBe` Just 3
-      Map.lookup Clock symbols `shouldBe` Just 1
-      Map.lookup Castle symbols `shouldBe` Just 2
+      let productions = productionsOf player
+      Map.lookup Crown productions `shouldBe` Just 1
+      Map.lookup Tree productions `shouldBe` Just 3
+      Map.lookup Clock productions `shouldBe` Just 1
+      Map.lookup Castle productions `shouldBe` Just 2
 
 main :: IO ()
 main = hspec spec

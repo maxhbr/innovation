@@ -103,7 +103,7 @@ pushCard c = pushCards [c]
 --------------------------------------------------------------------------------
 -- | do nothing
 skip :: Action Board
-skip = mkA . const $ log "... skip"
+skip = mkA . const $ log "skip"
 data Skip = Skip
           deriving (Eq, Show, Read)
 instance ActionToken Board Skip where
@@ -133,13 +133,12 @@ drawOfAnd inputAge = mkA $ \userId -> do
           return [card]
         []     -> logTODO "tried to draw above Age10, endgame..."
         _      -> logFatal "should not be reacheable"
-    _        -> unpackMove endGame
+    _        -> unpackMove doEndGame
 
 -- | Try to draw an card of current age
 drawAnd :: ActionWR Board [Card]
 drawAnd = mkA $ \userId -> do
-  actingPlayer <- getPlayerById userId
-  let playersAge = getPlayersAge actingPlayer
+  playersAge <- getAgeOf userId
   userId `takes` drawOfAnd playersAge
 
 drawNAnd :: Int -> ActionWR Board [Card]
@@ -153,7 +152,7 @@ putIntoPlay :: [Card] -> Action Board
 putIntoPlay card = mkA $ \userId -> let
   put1IntoPlay :: Card -> MoveType Board ()
   put1IntoPlay card = do
-    log ("put the card " ++ show card ++ " into play")
+    userId `loggs` ("put the card " ++ show card ++ " into play")
     let color = _color card
     modifyPlayer userId $ L.over L.playStacks (Map.adjust (pushCard card) color)
   in mapM_ put1IntoPlay card
@@ -173,7 +172,7 @@ dominateAge age = mkA $ \userId -> undefined
   -- (mc, ds) <- S.gets ((dominateAge' []) . (L.view L.dominateables))
   -- case mc of
   --   Just card -> do
-  --     log ("dominate age " ++ show age)
+  --     userId `loggs` ("dominate age " ++ show age)
 
   --     S.modify $ \b -> b { _dominateables=ds }
   --     modifyPlayer userId $ L.over L.dominations (card :)
