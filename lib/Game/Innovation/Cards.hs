@@ -47,6 +47,41 @@ agriculture =
          ]
        }
 
+archery =
+  Card { _title = "Archery"
+       , _color = Red
+       , _age = Age1
+       , _productions = Productions (Produce Castle) (Produce Bulb) None (Produce Castle)
+       , _dogmas =
+         [ Tree `IDemand` "I demand you draw a [1]! Then, transfer the highest card from your Hand to my Hand!" $
+           skip
+         ]
+       }
+
+city_states =
+  Card { _title = "City-States"
+       , _color = Purple
+       , _age = Age1
+       , _productions = Productions None (Produce Crown) (Produce Crown) (Produce Castle)
+       , _dogmas =
+         [ Tree `IDemand` "I demand that if you have four (Castle) or more, you transfer an Active card that provides (Castle) to my Zone! If you do, draw a [1]!" $
+           skip
+         ]
+       }
+
+clothing =
+  Card { _title = "Clothing"
+       , _color = Green
+       , _age = Age1
+       , _productions = Productions None (Produce Crown) (Produce Tree) (Produce Tree)
+       , _dogmas =
+         [ Tree `Dogma` "Put into play a card of a different color than any card in your Zone." $
+           skip
+         , Tree `Dogma` "Draw and score a [1] for each color in your Zone and in no other player's." $
+           skip
+         ]
+       }
+
 masonry =
   Card { _title = "Masonry"
        , _color = Yellow
