@@ -4,4 +4,4 @@ module Game.Innovation
 
 import Game.Innovation.Cards as X
 import Game.Innovation.Rules as X
-import Game.Innovation.Actions as X
+import Game.Innovation.ActionTokens as X

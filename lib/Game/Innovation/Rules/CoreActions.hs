@@ -1,21 +1,13 @@
-{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE CPP #-}
-module Game.Innovation.Actions.Basic
-       -- ( Skip (..), skip
-       -- , Draw (..)
-       -- , Play (..)
-       -- , Dominate (..)
-       -- , Activate (..)
-       -- )
-       where
+module Game.Innovation.Rules.CoreActions
+    where
 
 import           Prelude hiding (log)
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe
 import qualified Data.List as List
+import           Data.Maybe
+import           Control.Arrow ((&&&))
 import           Control.Monad
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Writer (WriterT)
@@ -28,9 +20,18 @@ import           Data.Proxy
 import qualified Control.Lens as L
 
 import           Game.MetaGame
-import           Game.Innovation.Rules
 import           Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
+import           Game.Innovation.Rules.CoreRules
+import           Game.Innovation.Rules.Helper
+
+-- | do nothing
+skip :: Action Board
+skip = mkA . const $ log "skip"
+data Skip = Skip
+          deriving (Eq, Show, Read)
+instance ActionToken Board Skip where
+  getAction Skip = skip
 
 pushCards :: Stack a =>
              [Card] -> a -> a
@@ -97,24 +98,6 @@ pushCard c = pushCards [c]
 -- putAtBottom :: [Card] -> Stack -> Stack
 -- putAtBottom cs = (++ cs)
 
---------------------------------------------------------------------------------
--- * Raw actions
-
---------------------------------------------------------------------------------
--- | do nothing
-skip :: Action Board
-skip = mkA . const $ log "skip"
-data Skip = Skip
-          deriving (Eq, Show, Read)
-instance ActionToken Board Skip where
-  getAction Skip = skip
-
-modifyPlayer :: UserId -> (Player -> Player) -> MoveType Board ()
-modifyPlayer userId f = do
-  playerToModify <- getPlayerById userId
-  let modifiedPlayer = f playerToModify
-  S.modify $ \b -> b {_players = modifiedPlayer : (filter (\p -> not $ p `hasUId` userId) (_players b))}
-
 drawNOfAnd :: Int -> Age -> ActionWR Board [Card]
 drawNOfAnd n age = (fmap concat) (replicateM n (drawOfAnd age))
 
@@ -161,6 +144,9 @@ score :: [Card] -> Action Board
 score cards = mkA $ \userId ->
   modifyPlayer userId $ L.over L.influence (pushCards cards)
 
+--------------------------------------------------------------------------------
+-- * complex Actions
+
 dominateAge :: Age -> Action Board
 dominateAge age = mkA $ \userId -> undefined
   -- let
@@ -178,68 +164,32 @@ dominateAge age = mkA $ \userId -> undefined
   --     modifyPlayer userId $ L.over L.dominations (card :)
   --   Nothing   -> logError $ "there is no card of age " ++ show age ++ " to be dominated"
 
--- --------------------------------------------------------------------------------
--- -- | Draw an card and put it into an temporary stack
--- data DrawAnd = forall actionToken.
---                (Read actionToken, Show actionToken, ActionToken Board actionToken) =>
---                DrawAnd actionToken
+--------------------------------------------------------------------------------
 
--- instance Eq DrawAnd where
---   (DrawAnd at1) == (DrawAnd at2) = show at1 == show at2
-
--- instance Read DrawAnd where -- TODO
-
--- instance Show DrawAnd where
---   show (DrawAnd at) = "DrawAnd " ++ show at
-
--- instance ActionToken Board DrawAnd where
---   getAction (DrawAnd actionToken) = A $ \userId ->
---     -- Draw
---     -- use actionToken on drawnCard
---     undefined userId
+doEndGame :: MoveWR Board a
+doEndGame = M $ do
+  log "endgame"
+  ps <- L.use L.players
+  let influences = map (_playerId &&& getInfluence) ps
+  let maxInfluence = maximum (map snd influences)
+  log $ "greatest influnce is: " ++ show maxInfluence
+  let winner = head [uid | (uid,infl) <- influences
+                         , infl == maxInfluence] -- TODO
+  S.modify (setMachineState' (GameOver winner))
+  S.get >>= (lift . lift . E.throwE)
 
 --------------------------------------------------------------------------------
--- -- | take all cards of the intermediate stack and put them into the hand
--- data PutIntoHand = PutIntoHand
---                  deriving (Eq, Read, Show)
--- instance ActionToken Board PutIntoHand where
---   getAction PutIntoHand = A $ \userId -> M $ do
---     logTODO "putIntoHand"
 
---------------------------------------------------------------------------------
--- | Draw
-data Draw = Draw
-          deriving (Eq, Read, Show)
-instance ActionToken Board Draw where
-  getAction Draw = drawAnd >>= putIntoHand
-
---------------------------------------------------------------------------------
--- | Play
-data Play = Play CardId
-          deriving (Eq, Read, Show)
-instance ActionToken Board Play where
-  getAction (Play cardId) = mkA $ \userId -> do
-    player <- getPlayerById userId
-    let (cardM, rest) = popTheCard cardId $ L.view L.hand player
-    case cardM of
-      Just card -> do
-        modifyPlayer userId $ \p -> p{ _hand=rest }
-        userId `takes` putIntoPlay [card]
-      Nothing   -> logError "card not in the hand"
-
---------------------------------------------------------------------------------
--- | Dominate
-data Dominate = Dominate Age
-              deriving (Eq, Read, Show)
-instance ActionToken Board Dominate where
-  getAction (Dominate age) = mkA $ \userId -> do
-    logTODO "check prerequisits"
-    userId `takes` dominateAge age
-
---------------------------------------------------------------------------------
--- | Activate
-data Activate = Activate Color
-              deriving (Eq, Read, Show)
-instance ActionToken Board Activate where
-  getAction (Activate color) = mkA $ \userId ->
+runDogma :: Dogma -> Action Board
+runDogma dogma = let
+  symb = getDSymbol dogma
+  -- determineAffected =
+  -- determineAffected = undefined
+  comperator callersNum = case dogma of
+    Dogma{}   -> (>= callersNum)
+    IDemand{} -> (< callersNum)
+  in mkA $ \uid -> do
+    callersNum <- getProductionsForSymbolOf uid symb
+    affected <- undefined -- TODO
+    -- mapM_ undefined affected -- TODO
     undefined

@@ -28,14 +28,29 @@ library
                      , Game.MetaGame.Helper
                      , Game.MetaGame.Play
                      , Game.MetaGame.Types
+                     -- , Game.Innovation
+                     -- , Game.Innovation.Types
+                     -- , Game.Innovation.CoreRules
+                     -- , Game.Innovation.Actions
+                     -- , Game.Innovation.Actions.Admin
+                     -- , Game.Innovation.Actions.Basic
+                     -- , Game.Innovation.Rules
+                     -- , Game.Innovation.Cards
+
                      , Game.Innovation
+                     , Game.Innovation.Rules.Helper
+                     , Game.Innovation.Rules.Rules
+                     , Game.Innovation.Rules.CoreRules
+                     , Game.Innovation.Rules.AdminActions
+                     , Game.Innovation.Rules.CoreActions
+                     , Game.Innovation.ActionTokens
+                     -- , Game.Innovation.ActionTokens.Admin
+                     -- , Game.Innovation.ActionTokens.Basic
                      , Game.Innovation.Types
-                     , Game.Innovation.CoreRules
-                     , Game.Innovation.Actions
-                     , Game.Innovation.Actions.Admin
-                     , Game.Innovation.Actions.Basic
                      , Game.Innovation.Rules
                      , Game.Innovation.Cards
+                     , Game.Innovation.TypesLenses
+
 
 executable innovation
   main-is:             Main.hs

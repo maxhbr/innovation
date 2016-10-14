@@ -1,10 +1,12 @@
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Game.Innovation.Actions.Admin
-    ( AddPlayer (..)
-    , StartGame (..)
-    ) where
+{-# LANGUAGE FlexibleContexts #-}
+module Game.Innovation.ActionTokens
+       ( AddPlayer (..), StartGame (..)
+       , Draw (..), Play (..), Dominate (..), Activate (..)
+       ) where
 
 import           Prelude hiding (log)
 import           Data.Map (Map)
@@ -32,57 +34,6 @@ import           Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
 import qualified Game.Innovation.Cards as Cards
 import           Game.Innovation.Rules
-import           Game.Innovation.Actions.Basic
-
-setDeck :: Move Board
-setDeck = M $ S.modify (\board -> board{ _drawStacks=Cards.getDeck })
-
-drawDominations :: Move Board
-drawDominations = M $ mapM_ (\age -> do
-                                (d,ds) <- S.gets (popCards 1 . fromJust . Map.lookup age . L.view L.drawStacks)
-                                S.modify (L.over L.dominateables (pushCards d))
-                                S.modify (L.over L.drawStacks (Map.insert age ds))) ages
-
-shuffle :: Int -> Move Board
-shuffle seed = M $ do
-  logForMe Admin
-    ("Shuffle with seed [" ++ show seed ++ "]")
-    "Shuffle with seed [only visible for admin]"
-  S.modify (shuffleState seed)
-
-addPlayer :: String -> Move Board
-addPlayer playerId = M $ do
-  log ("Add player: " ++ playerId)
-  mstate <- S.gets _machineState
-  case mstate of
-    Prepare -> do
-      let newPlayer = mkPlayer playerId
-      S.modify (L.players L.%~ (newPlayer :))
-    _       -> logError "not in prepare state."
-
-determineInitialPlayerOrder :: Move Board
-determineInitialPlayerOrder = M $ do
-  ps <- L.use L.players
-  L.playerOrder L..= map getUId ps -- FALSE! / TODO
-
-handOutInitialCards :: Move Board
-handOutInitialCards = do
-  M $ do
-     ps <- L.use L.players
-     log "determin first cards"
-     initialCards <- mapM ((\uid -> fmap (\l -> (uid,l))
-                                    (uid `takes` drawNOfAnd 2 Age1)) . getUId)
-                          ps
-     log "ask for first card"
-     answeredQuestions <- mapM (\(uid,cs) -> fmap (\[c] -> (uid, List.partition (==c) cs))
-                                                  ((uid `chooseOneOf` "the cards, to be played out first") cs))
-                               initialCards
-     log "all questions for first card were answered, play them"
-     mapM_ (\(uid,(playCards,handCards)) -> do
-               uid `takes` putIntoPlay playCards
-               uid `takes` putIntoHand handCards) answeredQuestions
-  determineInitialPlayerOrder
-  M $ L.machineState L..= WaitForTurn
 
 --------------------------------------------------------------------------------
 -- Admin actions
@@ -115,10 +66,47 @@ instance ActionToken Board StartGame where
       ps <- L.use L.players
       unless (length ps >= 2 && length ps <= 4)
         (logError "Numer of players is not valid")
-    setDeck
+    setDeck Cards.getDeck
     shuffle seed
     drawDominations
     handOutInitialCards
 
 -- data DropPlayer = DropPlayer UserId
 --                 deriving (Eq, Show, Read)
+
+--------------------------------------------------------------------------------
+-- Player actions
+--------------------------------------------------------------------------------
+-- | Draw
+data Draw = Draw
+          deriving (Eq, Read, Show)
+instance ActionToken Board Draw where
+  getAction Draw = drawAnd >>= putIntoHand
+
+-- | Play
+data Play = Play CardId
+          deriving (Eq, Read, Show)
+instance ActionToken Board Play where
+  getAction (Play cardId) = mkA $ \userId -> do
+    player <- getPlayerById userId
+    let (cardM, rest) = popTheCard cardId $ L.view L.hand player
+    case cardM of
+      Just card -> do
+        modifyPlayer userId $ \p -> p{ _hand=rest }
+        userId `takes` putIntoPlay [card]
+      Nothing   -> logError "card not in the hand"
+
+-- | Dominate
+data Dominate = Dominate Age
+              deriving (Eq, Read, Show)
+instance ActionToken Board Dominate where
+  getAction (Dominate age) = mkA $ \userId -> do
+    logTODO "check prerequisits"
+    userId `takes` dominateAge age
+
+-- | Activate
+data Activate = Activate Color
+              deriving (Eq, Read, Show)
+instance ActionToken Board Activate where
+  getAction (Activate color) = mkA $ \userId ->
+    undefined

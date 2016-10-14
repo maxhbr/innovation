@@ -13,7 +13,7 @@ import Game.Innovation.TestHelper
 import Game.MetaGame
 import Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
-import Game.Innovation.Actions
+import Game.Innovation.ActionTokens
 
 seed = 12345 :: Int
 

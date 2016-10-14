@@ -8,7 +8,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Game.Innovation.Types
-import Game.Innovation.Actions.Basic
+import Game.Innovation.Rules
 
 getDeck :: Map Age DrawStack
 getDeck = Map.fromList

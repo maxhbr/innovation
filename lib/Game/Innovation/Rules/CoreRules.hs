@@ -2,7 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
-module Game.Innovation.CoreRules
+module Game.Innovation.Rules.CoreRules
        where
 
 import           Data.Map (Map)
