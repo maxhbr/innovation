@@ -25,11 +25,11 @@ import           Game.MetaGame.Helper
 
 unpackToken :: ActionToken board actionToken =>
                actionToken -> UserId -> MoveWR board ()
-unpackToken token userId = do
-  b <- isAllowedFor token userId
-  M $ if b
-      then userId `takes` (getAction token)
-      else logError ("user " ++ show userId ++ " is not allowed to " ++ show token)
+unpackToken token userId = M $ do
+  b <- stateMatchesExpectation token
+  if b
+    then userId `takes` (getAction token)
+    else logError ("user " ++ show userId ++ " is not allowed to " ++ show token)
 
 generateNextTurnMessage :: BoardC board =>
                            board -> InnerMoveType board board
@@ -42,11 +42,11 @@ runTurn :: BoardC board =>
 runTurn b0 turn@(Turn userId actionToken choices) = do
   case (getMachineState' b0) of
     Prepare -> unless (userId == Admin) $
-                 innerLogError "only admin is allowed to take turns in the prepare phase"
+                 logErrorI "only admin is allowed to take turns in the prepare phase"
     WaitForTurn -> unless (getCurrentPlayer' b0 == userId) $
-                     innerLogError $ "the player " ++ show userId ++ " is not allowed to take an action"
-    WaitForChoice inq -> innerLogError $ "still waiting for answers to: " ++ (show inq)
-    GameOver _ -> innerLogError "game already over"
+                     logErrorI $ "the player " ++ show userId ++ " is not allowed to take an action"
+    WaitForChoice inq -> logErrorI $ "still waiting for answers to: " ++ (show inq)
+    GameOver _ -> logErrorI "game already over"
 
   let move = unpackMove (unpackToken actionToken userId)
 
@@ -56,7 +56,7 @@ runTurn b0 turn@(Turn userId actionToken choices) = do
       return b1
     Right ((_, b1), unconsumedChoices) -> do -- ^ Turn completed
       unless (null unconsumedChoices) $
-        innerLogError "not all choices were cosumed"
+        logErrorI "not all choices were cosumed"
 
       (lift . lift . W.tell) (G [turn])
       return $ advancePlayerOrder b1

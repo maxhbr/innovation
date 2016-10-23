@@ -3,7 +3,6 @@ module Game.Innovation.Rules
        ) where
 
 import Game.Innovation.Rules.CoreRules as X
-import Game.Innovation.Rules.Rules as X
 import Game.Innovation.Rules.Helper as X
 import Game.Innovation.Rules.CoreActions as X
 import Game.Innovation.Rules.AdminActions as X

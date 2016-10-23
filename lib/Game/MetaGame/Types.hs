@@ -7,7 +7,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Game.MetaGame.Types
        ( UserId (..), mkUserId, isAdmin
-       , Log (..), clog, viewLog
+       , LogEntry (..), (<<>), (<>>)
+       , Log (..), viewLog, logAnEntryI, logI, loggsI, logggsI, alogI
        , View (..)
        , PlayerC (..)
        , InqRestr (..), Inquiry (..), Answer (..)
@@ -27,6 +28,7 @@ module Game.MetaGame.Types
        ) where
 
 import           Prelude hiding (log)
+import           Data.String
 import           Data.Proxy
 import           Data.Text (Text)
 import qualified Data.Text as T
@@ -58,8 +60,9 @@ sanitizeUserId :: String -> String
 sanitizeUserId = id -- TODO
 
 data UserId
-  = U String
-  | Admin
+  = U String -- ^ regular user, determined by its username
+  | Admin -- ^ administrative user (is not allowed to play)
+  | Guest -- ^ unauthorized user
   deriving (Show,Eq,Read)
 mkUserId :: String -> UserId
 mkUserId = U . sanitizeUserId
@@ -87,6 +90,16 @@ class PlayerC player where
   hasEqualUId :: player -> player -> Bool
   hasEqualUId player1 player2 = player1 `hasUId` getUId player2
 
+getCommonUID :: UserId -> UserId -> UserId
+getCommonUID Guest uid = uid
+getCommonUID uid Guest = uid
+getCommonUID Admin uid = Admin
+getCommonUID uid Admin = Admin
+getCommonUID uid1 uid2 = uid1 `getCommonUID` uid2
+
+isAuthorizationLevel :: UserId -> UserId -> Bool
+isAuthorizationLevel asker level = (asker `getCommonUID` level) == asker
+
 --------------------------------------------------------------------------------
 -- ** Log
 
@@ -96,30 +109,100 @@ class PlayerC player where
 --   | NONE
 --   deriving (Eq,Show,Enum,Ord,Bounded)
 
-type ViewerDependent
-  = Reader UserId
+-- type LogEntry
+--   = Reader UserId
+-- | a logentry will be a line of a log
+data LogEntry
+  -- | a log entry, which is visible for all users
+  = CLogE Text -- ^ the text visible for all
+  -- | a log entry, which also contains content which is only visible for the admin
+  | ALogE Text -- ^ the text visible for all
+          Text -- ^ the restricted text
+  -- | a log entry containing hidden content, visible for specific users (and admin)
+  | ULogE UserId
+          Text -- ^ the text visible for all
+          Text -- ^ the restricted text
 
--- | A user dependent Log
+canonifyLE :: LogEntry -> LogEntry
+canonifyLE (ULogE Admin t1 t2) = canonifyLE (ALogE t1 t2)
+canonifyLE (ULogE Guest _  t2) = CLogE t2
+canonifyLE le@(ULogE _  t1 t2) | t1 == t2  = CLogE t1
+                               | otherwise = le
+canonifyLE le@(ALogE t1 t2)    | t1 == t2  = CLogE t1
+                               | otherwise = le
+canonifyLE le@(CLogE t)        = le
+
+getRestricted, getUnrestricted :: LogEntry -> Text
+getRestricted (CLogE t)     = t
+getRestricted (ALogE _ t)   = t
+getRestricted (ULogE _ _ t) = t
+getUnrestricted (CLogE t)     = t
+getUnrestricted (ALogE t _)   = t
+getUnrestricted (ULogE _ t _) = t
+
+-- decanonifyLE :: LogEntry -> LogEntry
+-- decanonifyLE (CLogE t)     = ULogE Guest t t
+-- decanonifyLE (ALogE t1 t2) = ULogE Admin t1 t2
+-- decanonifyLE le@(ULogE{})  = le
+
+viewLE :: UserId -> LogEntry -> Text
+viewLE _      (CLogE t)         = t
+viewLE Admin  (ALogE _ t2)      = t2
+viewLE _      (ALogE t1 _)      = t1
+viewLE viewer (ULogE uid t1 t2) | viewer `isAuthorizationLevel` uid = t2
+                                | otherwise                         = t1
+
+mkALogEntry :: String -> String -> LogEntry
+mkALogEntry restr unrestr = canonifyLE (ALogE (T.pack restr) (T.pack unrestr))
+
+mkUserLogEntry :: UserId -> String -> String -> LogEntry
+mkUserLogEntry uid restr unrestr = canonifyLE (ULogE uid (T.pack restr) (T.pack unrestr))
+
+instance Show LogEntry where
+  show (CLogE t)     = T.unpack t
+  show (ALogE t _)   = T.unpack t
+  show (ULogE _ t _) = T.unpack t
+
+instance IsString LogEntry where
+  fromString = CLogE . T.pack
+
+instance Monoid LogEntry where
+  mempty = fromString ""
+  mappend le1 le2 = canonifyLE $
+                    ULogE (getOwner le1 `getCommonUID` getOwner le2)
+                          (getUnrestricted le1 `T.append` getUnrestricted le2)
+                          (getRestricted le1 `T.append` getRestricted le2)
+
+(<<>) :: String -> LogEntry -> LogEntry
+s <<> l = fromString s `mappend` l
+
+(<>>) :: LogEntry -> String -> LogEntry
+l <>> s = l `mappend` fromString s
+
 -- newtype Log = Log (UserId -> Text)
-newtype Log
-  = Log (ViewerDependent Text)
+-- data Log
+--   = Log { _contentText :: Either Text -- ^ restricted text
+--                                  Text -- ^ unrestricted text
+--         , _isAllowed   :: UserId -> Bool } -- ^ Whether a user is allowed to see the unrestricted text
+-- data Log
+--   = Log { _getLogText      :: ( Text
+--                               , Maybe Text )
+--         , _isAllowedViewer :: UserId -> Bool } -- ^ Whether a user is allowed to see the unrestricted text
+-- data Log
+--   = Log Text -- ^ unrestricted text
+--         Text -- ^ restricted text
+--         [UserId] -- ^ list of authorized users (implicitliy always including Admin)
+-- newtype Log
+--   = Log (LogEntry)
+-- | A user dependent Log
+type Log = [LogEntry]
 
-clog :: String -> Log
-clog = Log . return . T.pack
-
-onlyForAdmin :: Log -> Log
-onlyForAdmin (Log l) = Log $ do
-  viewer <- R.ask
-  if isAdmin viewer
-    then l
-    else return ""
-
-alog :: String -> Log
-alog = onlyForAdmin . clog
+instance IsString Log where
+  fromString s = [fromString s]
 
 -- | helper function to get the log from the view of an user
 viewLog :: UserId -> Log -> Text
-viewLog userId (Log log) = R.runReader log userId
+viewLog userId log = T.unwords (map (cleanText . viewLE userId) log)
 
 -- This may result in very bad performance
 cleanText :: Text -> Text
@@ -129,33 +212,66 @@ cleanText t = let
      then stripedText
      else stripedText `T.snoc` '\n'
 
--- | we can combine logs to in an monoidal way
-instance Monoid Log where
-  mempty                    = clog ""
-  mappend (Log l1) (Log l2) = Log $ do
-    r1 <- fmap cleanText l1
-    r2 <- fmap cleanText l2
-    return (r1 `T.append` r2)
+-- *** logging helper for the inner circle
+
+logAnEntryI :: (Monad m, MonadTrans t) =>
+               LogEntry -> t (WriterT Log m) ()
+logAnEntryI = lift
+            . W.tell
+            . (:[])
+
+logI :: (Monad m, MonadTrans t) =>
+        String -> t (WriterT Log m) ()
+logI = logAnEntryI
+     . fromString
+
+loggsI :: (Monad m, MonadTrans t) =>
+          UserId -> String -> t (WriterT Log m) ()
+loggsI uid = logAnEntryI
+           . ((show uid ++ ": ") <<>)
+           . fromString
+
+logggsI :: (Monad m, MonadTrans t) =>
+          UserId -> String -> String -> t (WriterT Log m) ()
+logggsI uid unrestricted = logAnEntryI
+                         . ((show uid ++ ": ") <<>)
+                         . mkUserLogEntry uid unrestricted
+
+alogI :: (Monad m, MonadTrans t) =>
+        String -> String -> t (WriterT Log m) ()
+alogI unrestricted = logAnEntryI
+                   . ((show Admin ++ ": ") <<>)
+                   . mkALogEntry unrestricted
+
+--------------------------------------------------------------------------------
+-- * The View class
+--------------------------------------------------------------------------------
 
 class Show a =>
       View a where
   showRestricted :: a -> String
   showRestricted = show
 
-  extractOwner :: a -> Maybe UserId
-  extractOwner _ = Nothing
+  showUnrestricted :: a -> String
+  showUnrestricted = show
 
-  view :: a -> ViewerDependent Text
-  view a = do
-    let owner = extractOwner a
-    viewer <- R.ask
-    return ((case owner of
-                Nothing    -> T.pack . show
-                Just owner -> T.pack . if isAdmin viewer || (viewer == owner)
-                                       then show
-                                       else showRestricted) a)
+  getOwner :: a -> UserId
+  getOwner _ = Guest
+
+  view :: a -> LogEntry
+  view a = canonifyLE (ULogE (getOwner a)
+                             ((T.pack . showUnrestricted) a)
+                             ((T.pack . showRestricted) a))
 
 instance View UserId
+
+instance View LogEntry where
+  showRestricted = T.unpack . getRestricted
+  showUnrestricted = T.unpack . getUnrestricted
+  getOwner CLogE{}         = Guest
+  getOwner ALogE{}         = Admin
+  getOwner (ULogE uid _ _) = uid
+  view = id
 
 --------------------------------------------------------------------------------
 -- * Basic data and type declerations
@@ -172,7 +288,7 @@ newtype InqRestr
 
 instance Monoid InqRestr where
   mempty                                = InqRestr (const True)
-  mappend (InqRestr ir1) (InqRestr ir2) = InqRestr (\cs -> (ir1 cs) && (ir2 cs))
+  mappend (InqRestr ir1) (InqRestr ir2) = InqRestr (\cs -> ir1 cs && ir2 cs)
 
 data Inquiry a
   = Inquiry { askedPlayer :: UserId -- ^ the user asked to answer the question
@@ -191,7 +307,7 @@ instance Show a =>
   show inq@(Inquiry ap iq io _) = iq ++ " <- " ++ show ap ++ " (Options are " ++ "TODO" ++ ")"
 instance Show a =>
          View (Inquiry a) where
-  extractOwner (Inquiry ap _ _ _) = Just ap
+  getOwner (Inquiry ap _ _ _) = ap
   showRestricted inq@(Inquiry ap iq _ _) = iq ++ " <- " ++ show ap
 
 data Answer
@@ -200,7 +316,7 @@ data Answer
                                -- '[]' means "No" for boolean questions, '[0]' is "Yes"
   deriving (Show, Eq)
 instance View Answer where
-  extractOwner (Answer ap _) = Just ap
+  getOwner (Answer ap _) = ap
   showRestricted (Answer ap _) = "[Answer by " ++ show ap ++ "]"
 
 --------------------------------------------------------------------------------
@@ -227,8 +343,8 @@ instance Show MachineState where
   show (WaitForChoice inq) = "WaitForChoice: " ++ show inq
   show (GameOver winner)   = "GameOver: " ++ show winner ++ " has won"
 instance View MachineState where
-  extractOwner (WaitForChoice inq) = extractOwner inq
-  extractOwner _                   = Nothing
+  getOwner (WaitForChoice inq) = getOwner inq
+  getOwner _                   = Guest
   showRestricted (WaitForChoice inq) = "WaitForChoice: " ++ showRestricted inq
   showRestricted ms                  = show ms
 
@@ -387,9 +503,14 @@ instance BoardC board =>
 --   - knows its corresponding action
 class (BoardC board, Eq actionToken, Read actionToken, Show actionToken) =>
       ActionToken board actionToken where
+  -- | returns the action corresponding to an Token
   getAction :: actionToken -> Action board
-  isAllowedFor :: actionToken -> UserId -> MoveWR board Bool
-  isAllowedFor _ _ = return True
+
+  -- | returns, whether the board is within an state, where the turn can be applied
+  stateMatchesExpectation :: actionToken -> MoveType board Bool
+  stateMatchesExpectation _ = do
+    ms <- S.gets getMachineState'
+    return (ms == WaitForTurn)
 
 --------------------------------------------------------------------------------
 -- ** Turns
@@ -456,7 +577,7 @@ mkG = G . accumulateInput id . reverse
   where
     accumulateInput :: (Turn board -> Turn board) -> [UserInput board] -> [Turn board]
     accumulateInput cs (UChoice f : uis) = accumulateInput (f . cs) uis
-    accumulateInput cs (UTurn t : uis)   = (cs t) : accumulateInput id uis
+    accumulateInput cs (UTurn t : uis)   = cs t : accumulateInput id uis
     accumulateInput _  []                = []
 
 (<=>) :: Game board -> UserInput board -> Game board

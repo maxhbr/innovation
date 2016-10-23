@@ -35,18 +35,20 @@ import qualified Game.Innovation.TypesLenses as L
 import qualified Game.Innovation.Cards as Cards
 import           Game.Innovation.Rules
 
+onlyPrepareState :: MoveType Board Bool
+onlyPrepareState = do
+  ms <- S.gets getMachineState'
+  return (ms == Prepare)
+
 --------------------------------------------------------------------------------
--- Admin actions
---------------------------------------------------------------------------------
+-- * Admin actions
+
 -- | AddPlayer
 -- add an player with a given playerId to the game
 data AddPlayer = AddPlayer String
                deriving (Eq, Show, Read)
 instance ActionToken Board AddPlayer where
-  isAllowedFor (AddPlayer _) Admin = do
-    state <- M getMachineState
-    return $ state == Prepare
-  isAllowedFor _ _ = return False
+  stateMatchesExpectation _ = onlyPrepareState
 
   getAction (AddPlayer newPlayerId) = (mkAdminA . addPlayer) newPlayerId
 
@@ -55,10 +57,7 @@ instance ActionToken Board AddPlayer where
 data StartGame = StartGame Int
                deriving (Eq, Show, Read)
 instance ActionToken Board StartGame where
-  isAllowedFor (StartGame _) Admin = do
-    state <- M getMachineState
-    return $ state == Prepare
-  isAllowedFor _ _ = return False
+  stateMatchesExpectation _ = onlyPrepareState
 
   getAction (StartGame seed) = mkAdminA $ do
     M $ log "start the game"
@@ -75,8 +74,8 @@ instance ActionToken Board StartGame where
 --                 deriving (Eq, Show, Read)
 
 --------------------------------------------------------------------------------
--- Player actions
---------------------------------------------------------------------------------
+-- * Player actions
+
 -- | Draw
 data Draw = Draw
           deriving (Eq, Read, Show)
@@ -108,5 +107,9 @@ instance ActionToken Board Dominate where
 data Activate = Activate Color
               deriving (Eq, Read, Show)
 instance ActionToken Board Activate where
-  getAction (Activate color) = mkA $ \userId ->
-    undefined
+  getAction (Activate color) = mkA $ \userId -> do
+    ps <- getPlayStackByColorOf color userId
+    when (isEmptyStack ps)
+      (logError $ "Stack of color " ++ show color ++ " is empty")
+    let activeCard = (head . getRawStack) ps
+    userId `takes` runDogmasOfCard activeCard

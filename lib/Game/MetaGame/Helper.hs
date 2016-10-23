@@ -24,103 +24,96 @@ import qualified Control.Lens as L
 
 import Game.MetaGame.Types
 
---------------------------------------------------------------------------------
--- * helper related to 'Move' and 'MoveType'-things
---------------------------------------------------------------------------------
-
 liftFromInner :: InnerMoveType s a -> MoveType s a
 liftFromInner = lift . lift . lift
 
-clog' :: (Monad m, MonadTrans t) =>
-        String -> t (WriterT Log m) ()
-clog' = lift . W.tell . clog
-
 -- ** helper for logging
-log :: BoardC s =>
-       String -> MoveType s ()
-log text = liftFromInner . clog' $ "... " ++ text
 
-logM :: BoardC s =>
-        String -> ActionType s ()
-logM msg = do
-  uid <- R.ask
-  lift (log (show uid ++ ": " ++ msg))
+logAnEntry :: LogEntry -> MoveType s ()
+logAnEntry = liftFromInner . logAnEntryI
 
--- logBy :: BoardC s =>
---          UserId -> String -> MoveType s ()
--- logBy loggingUser text = liftFromInner . clog' $
---                        show loggingUser ++ ": " ++ text
+log :: String -> MoveType s ()
+log = liftFromInner . logI
+
 loggs :: UserId -> String -> MoveType s ()
-loggs loggingUser text = liftFromInner . clog' $ show loggingUser ++ ": " ++ text
+loggs uid = liftFromInner . loggsI uid
 
-logForMe :: BoardC s =>
-            UserId -> String -> String -> MoveType s ()
-logForMe loggingUser textPrivate textPublic = liftFromInner . lift . W.tell . Log $ do
-  viewer <- R.ask
-  return (T.pack (show loggingUser ++ ": " ++
-                  if viewer == loggingUser || viewer == Admin
-                  then textPrivate
-                  else textPublic))
+logggs :: UserId -> String -> String -> MoveType s ()
+logggs uid unrestricted = liftFromInner . logggsI uid unrestricted
+
+alog :: String -> String -> MoveType s ()
+alog unrestricted = liftFromInner . alogI unrestricted
+
+logA :: BoardC s =>
+        String -> ActionType s ()
+logA msg = do
+  uid <- R.ask
+  lift (uid `loggs` msg)
+
+loggA :: BoardC s =>
+         String -> String -> ActionType s ()
+loggA unMsg restrMsg = do
+  uid <- R.ask
+  lift ((uid `logggs` unMsg) restrMsg)
 
 -- | logWarn prints a warning to the log
-logWarn :: BoardC s =>
-            String -> MoveType s ()
-logWarn = liftFromInner . innerLogWarn
+logWarnI :: String -> InnerMoveType s ()
+logWarnI warn = logI $ "Warning: " ++ warn
 
-innerLogWarn :: BoardC s =>
-                 String -> InnerMoveType s ()
-innerLogWarn warn = clog' $ "Warning: " ++ warn
-
-innerLogError :: BoardC s =>
-                 String -> InnerMoveType s a
-innerLogError error = do
-  clog' $ "Error: " ++ error
-  E.throwE $ T.pack error
+logWarn :: String -> MoveType s ()
+logWarn = liftFromInner . logWarnI
 
 -- | logError logs an error and throws the exception
 -- this ends the game
+logErrorI :: BoardC s =>
+                 String -> InnerMoveType s a
+logErrorI error = do
+  logI $ "Error: " ++ error
+  E.throwE $ T.pack error
+
 logError :: BoardC s =>
             String -> MoveType s a
-logError = liftFromInner . innerLogError
+logError = liftFromInner . logErrorI
 
-logErrorM :: BoardC s =>
+logErrorA :: BoardC s =>
              String -> ActionType s a
-logErrorM err = do
+logErrorA err = do
   uid <- R.ask
   (lift . logError) (show uid ++ ": " ++ err)
 
 -- | logFatal logs an fatal and throws the exception
 -- this ends the game
-logFatal :: BoardC s =>
-            String -> MoveType s a
-logFatal = liftFromInner . innerLogFatal
-
-innerLogFatal :: BoardC s =>
-                 String -> InnerMoveType s a
-innerLogFatal fatal = do
-  clog' $ "Fatal: " ++ fatal
+logFatalI :: String -> InnerMoveType s a
+logFatalI fatal = do
+  logI $ "Fatal: " ++ fatal
   E.throwE $ T.pack fatal
 
+logFatal :: BoardC s =>
+            String -> MoveType s a
+logFatal = liftFromInner . logFatalI
+
 -- | logInfo
+logInfoI :: BoardC s =>
+          String -> InnerMoveType s ()
+logInfoI info = logI $ "Info: " ++ info
+
 logInfo :: BoardC s =>
            String -> MoveType s ()
-logInfo = liftFromInner . innerLogInfo
-
-innerLogInfo :: BoardC s =>
-                String -> InnerMoveType s ()
-innerLogInfo info = clog' $ "Info: " ++ info
+logInfo = liftFromInner . logInfoI
 
 -- | logTODO logs an unimplemented thing and throws the exception
 -- this ends the game
-logTODO :: BoardC s =>
-           String -> MoveType s a
-logTODO = liftFromInner . innerLogTODO
-
-innerLogTODO :: BoardC s =>
-                String -> InnerMoveType s a
-innerLogTODO todo = do
-  clog' $ "TODO: " ++ todo
+logTODOI :: String -> InnerMoveType s a
+logTODOI todo = do
+  logI $ "TODO: " ++ todo
   E.throwE $ T.pack $ "TODO: " ++ todo
+
+logTODO :: String -> MoveType s a
+logTODO = liftFromInner . logTODOI
+
+--------------------------------------------------------------------------------
+-- * helper related to 'Move' and 'MoveType'-things
+--------------------------------------------------------------------------------
 
 -- ** helper for defining Moves and MoveType things
 
@@ -153,7 +146,7 @@ mkAdminA t = A $ do
   uid <- R.ask
   case uid of
     Admin -> (lift . unpackMove) t
-    _     -> logErrorM "Action was not authorized"
+    _     -> logErrorA "Action was not authorized"
 
 -- | make an action from an user-dependent MoveType-thing
 mkA :: BoardC board =>
@@ -174,6 +167,6 @@ mkCurPlayerA :: BoardC board =>
 mkCurPlayerA t = A $ do
   uid <- R.ask
   currentPlayer <- (lift . S.gets) getCurrentPlayer'
-  if (currentPlayer == uid || uid == Admin)
-    then logErrorM "not allowed to take an action"
+  if currentPlayer == uid || uid == Admin
+    then logErrorA "not allowed to take an action"
     else lift t

@@ -35,9 +35,8 @@ drawDominations = M $ mapM_ (\age -> do
 
 shuffle :: Int -> Move Board
 shuffle seed = M $ do
-  logForMe Admin
-    ("Shuffle with seed [" ++ show seed ++ "]")
-    "Shuffle with seed [only visible for admin]"
+  alog ("Shuffle with seed [" ++ show seed ++ "]")
+        "Shuffle with seed [only visible for admin]"
   S.modify (shuffleState seed)
 
 addPlayer :: String -> Move Board
@@ -59,15 +58,15 @@ handOutInitialCards :: Move Board
 handOutInitialCards = do
   M $ do
      ps <- L.use L.players
-     log "determin first cards"
+     Admin `loggs` "determin first cards"
      initialCards <- mapM ((\uid -> fmap (\l -> (uid,l))
                                     (uid `takes` drawNOfAnd 2 Age1)) . getUId)
                           ps
-     log "ask for first card"
+     Admin `loggs` "ask for first card"
      answeredQuestions <- mapM (\(uid,cs) -> fmap (\[c] -> (uid, List.partition (==c) cs))
                                                   ((uid `chooseOneOf` "the cards, to be played out first") cs))
                                initialCards
-     log "all questions for first card were answered, play them"
+     Admin `loggs` "all questions for first card were answered, play them"
      mapM_ (\(uid,(playCards,handCards)) -> do
                uid `takes` putIntoPlay playCards
                uid `takes` putIntoHand handCards) answeredQuestions

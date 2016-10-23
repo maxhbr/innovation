@@ -1,4 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Game.Innovation.Rules.CoreActions
     where
 
@@ -7,7 +8,7 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.List as List
 import           Data.Maybe
-import           Control.Arrow ((&&&))
+import           Data.String
 import           Control.Monad
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Writer (WriterT)
@@ -18,6 +19,7 @@ import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
 import           Data.Proxy
 import qualified Control.Lens as L
+import qualified Control.Arrow as Arr
 
 import           Game.MetaGame
 import           Game.Innovation.Types
@@ -52,7 +54,7 @@ popCards n a = ((\(cs, rs) -> (cs, setRawStack a rs)) . popCards' n . getRawStac
 
 popCardsWith :: Stack a =>
                 Int -> (Card -> Bool) -> a -> ([Card],a)
-popCardsWith n p a = (\(res,rs) -> (res, setRawStack a rs)) (popCardsWith' n p (getRawStack a))
+popCardsWith n p a = (Arr.second (setRawStack a)) (popCardsWith' n p (getRawStack a))
   where
     popCardsWith' 0 _ a      = ([], a)
     popCardsWith' _ _ []     = ([], [])
@@ -63,11 +65,11 @@ popTheCard :: Stack a =>
               CardId -> a -> (Maybe Card, a)
 popTheCard cid a = let
   (rs1,rs2) = List.partition (\c -> getCId c == cid) (getRawStack a) -- TODO: respects order??
-  in (\(res,rs) -> (res, setRawStack a rs)) (case rs1 of
-                                                [c] -> (Just c, rs2)
-                                                []  -> (Nothing, rs2)
-                                                _   -> undefined -- TODO: should not be reacheable
-                                            )
+  in (Arr.second (setRawStack a)) (case rs1 of
+                                      [c] -> (Just c, rs2)
+                                      []  -> (Nothing, rs2)
+                                      _   -> undefined -- TODO: should not be reacheable
+                                  )
 
 popCard :: Stack a =>
            a -> ([Card], a)
@@ -99,20 +101,21 @@ pushCard c = pushCards [c]
 -- putAtBottom cs = (++ cs)
 
 drawNOfAnd :: Int -> Age -> ActionWR Board [Card]
-drawNOfAnd n age = (fmap concat) (replicateM n (drawOfAnd age))
+drawNOfAnd n age = fmap concat (replicateM n (drawOfAnd age))
 
 -- | Try to draw an card of an specific age
 drawOfAnd :: Age -> ActionWR Board [Card]
 drawOfAnd inputAge = mkA $ \userId -> do
-  drawAge <- getDrawAge inputAge
+  drawAge <- getDrawAgeByAge inputAge
   case drawAge of
     Just age -> do
-      stack <- S.gets (fromJust . (Map.lookup age) . _drawStacks)
+      stack <- S.gets (fromJust . Map.lookup age . _drawStacks)
       let (cards, rest) = popCard stack
       S.modify $ L.over L.drawStacks (Map.insert age rest)
       case cards of
         [card] -> do
-          logForMe userId ("draw the card " ++ show card) ("draw a card of age " ++ show age)
+          logAnEntry ("draw the card " <<> view card)
+          (userId `logggs` ("draw the card " ++ show card)) ("draw a card of age " ++ show age)
           return [card]
         []     -> logTODO "tried to draw above Age10, endgame..."
         _      -> logFatal "should not be reacheable"
@@ -125,7 +128,7 @@ drawAnd = mkA $ \userId -> do
   userId `takes` drawOfAnd playersAge
 
 drawNAnd :: Int -> ActionWR Board [Card]
-drawNAnd n =(fmap concat) (replicateM n drawAnd)
+drawNAnd n = fmap concat (replicateM n drawAnd)
 
 putIntoHand :: [Card] -> Action Board
 putIntoHand cards = mkA $ \userId ->
@@ -147,6 +150,9 @@ score cards = mkA $ \userId ->
 --------------------------------------------------------------------------------
 -- * complex Actions
 
+--------------------------------------------------------------------------------
+-- ** Domination related Actions
+
 dominateAge :: Age -> Action Board
 dominateAge age = mkA $ \userId -> undefined
   -- let
@@ -165,31 +171,33 @@ dominateAge age = mkA $ \userId -> undefined
   --   Nothing   -> logError $ "there is no card of age " ++ show age ++ " to be dominated"
 
 --------------------------------------------------------------------------------
+-- ** Dogma related Actions
 
-doEndGame :: MoveWR Board a
-doEndGame = M $ do
-  log "endgame"
-  ps <- L.use L.players
-  let influences = map (_playerId &&& getInfluence) ps
-  let maxInfluence = maximum (map snd influences)
-  log $ "greatest influnce is: " ++ show maxInfluence
-  let winner = head [uid | (uid,infl) <- influences
-                         , infl == maxInfluence] -- TODO
-  S.modify (setMachineState' (GameOver winner))
-  S.get >>= (lift . lift . E.throwE)
+getAffectedOrder :: [UserId] -> MoveType Board [UserId]
+getAffectedOrder affected = let
+  getOrder = do
+    ps <- fmap List.nub (S.gets _playerOrder)
+    case ps of
+      (hp:tp) -> return (tp ++ [hp])
+      []      -> return []
+  in do
+    order <- getOrder
+    return (filter (`elem` affected) order)
 
---------------------------------------------------------------------------------
+runDogmasOfCard :: Card -> Action Board
+runDogmasOfCard Card { _dogmas=ds } = runDogmas ds
+
+runDogmas :: [Dogma] -> Action Board
+runDogmas = mapM_ runDogma
 
 runDogma :: Dogma -> Action Board
 runDogma dogma = let
   symb = getDSymbol dogma
-  -- determineAffected =
-  -- determineAffected = undefined
   comperator callersNum = case dogma of
     Dogma{}   -> (>= callersNum)
     IDemand{} -> (< callersNum)
   in mkA $ \uid -> do
-    callersNum <- getProductionsForSymbolOf uid symb
-    affected <- undefined -- TODO
-    -- mapM_ undefined affected -- TODO
-    undefined
+    callersNum <- getProductionsForSymbolOf symb uid
+    affected <- getUidsWith (comperator callersNum . productionsForSymbolOf symb)
+    orderedAffected <- getAffectedOrder affected
+    mapM_ (`takes` getDAction dogma) orderedAffected

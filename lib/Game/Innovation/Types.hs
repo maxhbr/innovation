@@ -10,6 +10,7 @@ import qualified Data.Map as Map
 import           Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.List as List
+import           Data.String
 import           Data.Proxy
 import           System.Random
 import           System.Random.Shuffle (shuffle')
@@ -24,6 +25,8 @@ import qualified Control.Monad.Trans.Except as E
 import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
 
+import qualified System.HsTColors as HsT
+
 import           Game.MetaGame
 
 --------------------------------------------------------------------------------
@@ -33,6 +36,12 @@ import           Game.MetaGame
 data Color = Blue | Purple | Red | Yellow | Green
   deriving (Eq,Show,Read,Enum,Ord,Bounded)
 instance View Color
+mkColored :: Color -> String -> String
+mkColored Blue   = HsT.mkBkBlue
+mkColored Purple = HsT.mkBkMagenta
+mkColored Red    = HsT.mkBkRed . HsT.mkBlack
+mkColored Yellow = HsT.mkBkYellow . HsT.mkBlack
+mkColored Green  = HsT.mkBkGreen . HsT.mkBlack
 
 colors :: [Color]
 colors = [minBound ..]
@@ -65,6 +74,10 @@ instance Show Dogma where
 getDSymbol :: Dogma -> Symbol
 getDSymbol (Dogma symb _ _)   = symb
 getDSymbol (IDemand symb _ _) = symb
+
+getDAction :: Dogma -> (Action Board)
+getDAction (Dogma _ _ a)   = a
+getDAction (IDemand _ _ a) = a
 
 --------------------------------------------------------------------------------
 -- Cards
@@ -106,6 +119,9 @@ data CardId = CardId { unpackCardId :: String }
 instance Show Card where
   show Card{ _title=t, _age=a } = "[" ++ show a ++ ": " ++ t ++ "]"
 
+instance View Card where
+  view c@Card{ _color=col } = fromString (mkColored col (show c))
+
 instance Ord CardId where
   compare (CardId c1) (CardId c2) = compare c1 c2
 
@@ -144,8 +160,8 @@ data Domination
   deriving (Show)
 
 instance View [Domination] where
-  view [] = return $ T.pack "No dominations"
-  view ds = return $ T.pack $ show (length ds) ++ " dominations"
+  view [] = fromString "No dominations"
+  view ds = fromString (show (length ds) ++ " dominations")
 
 --------------------------------------------------------------------------------
 -- Players
@@ -212,8 +228,8 @@ newtype Dominations = Dominations [Domination]
                       deriving (Show)
 
 instance View [Card] where
-  view [] = (return . T.pack) "[ 0 Cards ]"
-  view cs = (return . T.pack) ("[ " ++ show (length cs) ++ " Cards (head is " ++ show (head cs) ++ " ]")
+  view [] = fromString "[ 0 Cards ]"
+  view cs = fromString ("[ " ++ show (length cs) ++ " Cards (head is " ++ show (head cs) ++ " ]")
 
 data SplayState
   = SplayedLeft
@@ -254,7 +270,7 @@ instance Show Player where
        ++ " doms: " ++ numOfDominations ++ "]"
 
 instance View Player where
-  extractOwner = Just . getUId
+  getOwner = getUId
 
   -- showRestricted p@(Player uid ps inf doms hand) = undefined
 
