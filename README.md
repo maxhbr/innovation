@@ -1,4 +1,4 @@
-# Innovation
+# Innovation [![Build Status](https://travis-ci.org/maximilianhuber/innovation.svg?branch=master)](https://travis-ci.org/maximilianhuber/innovation)
 
 ### A input of a game might look like
 This is what player1 would see:
