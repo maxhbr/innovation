@@ -32,6 +32,9 @@ liftFromInner = lift . lift . lift
 logAnEntry :: LogEntry -> MoveType s ()
 logAnEntry = liftFromInner . logAnEntryI
 
+loggsAnEntry :: UserId -> LogEntry -> MoveType s ()
+loggsAnEntry uid = liftFromInner . (uid `loggsAnEntryI`)
+
 log :: String -> MoveType s ()
 log = liftFromInner . logI
 

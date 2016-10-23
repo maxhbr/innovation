@@ -8,7 +8,7 @@
 module Game.MetaGame.Types
        ( UserId (..), mkUserId, isAdmin
        , LogEntry (..), (<<>), (<>>)
-       , Log (..), viewLog, logAnEntryI, logI, loggsI, logggsI, alogI
+       , Log (..), viewLog, logAnEntryI, loggsAnEntryI, logI, loggsI, logggsI, alogI
        , View (..)
        , PlayerC (..)
        , InqRestr (..), Inquiry (..), Answer (..)
@@ -109,8 +109,6 @@ isAuthorizationLevel asker level = (asker `getCommonUID` level) == asker
 --   | NONE
 --   deriving (Eq,Show,Enum,Ord,Bounded)
 
--- type LogEntry
---   = Reader UserId
 -- | a logentry will be a line of a log
 data LogEntry
   -- | a log entry, which is visible for all users
@@ -139,11 +137,6 @@ getRestricted (ULogE _ _ t) = t
 getUnrestricted (CLogE t)     = t
 getUnrestricted (ALogE t _)   = t
 getUnrestricted (ULogE _ t _) = t
-
--- decanonifyLE :: LogEntry -> LogEntry
--- decanonifyLE (CLogE t)     = ULogE Guest t t
--- decanonifyLE (ALogE t1 t2) = ULogE Admin t1 t2
--- decanonifyLE le@(ULogE{})  = le
 
 viewLE :: UserId -> LogEntry -> Text
 viewLE _      (CLogE t)         = t
@@ -179,21 +172,6 @@ s <<> l = fromString s `mappend` l
 (<>>) :: LogEntry -> String -> LogEntry
 l <>> s = l `mappend` fromString s
 
--- newtype Log = Log (UserId -> Text)
--- data Log
---   = Log { _contentText :: Either Text -- ^ restricted text
---                                  Text -- ^ unrestricted text
---         , _isAllowed   :: UserId -> Bool } -- ^ Whether a user is allowed to see the unrestricted text
--- data Log
---   = Log { _getLogText      :: ( Text
---                               , Maybe Text )
---         , _isAllowedViewer :: UserId -> Bool } -- ^ Whether a user is allowed to see the unrestricted text
--- data Log
---   = Log Text -- ^ unrestricted text
---         Text -- ^ restricted text
---         [UserId] -- ^ list of authorized users (implicitliy always including Admin)
--- newtype Log
---   = Log (LogEntry)
 -- | A user dependent Log
 type Log = [LogEntry]
 
@@ -202,15 +180,7 @@ instance IsString Log where
 
 -- | helper function to get the log from the view of an user
 viewLog :: UserId -> Log -> Text
-viewLog userId log = T.unwords (map (cleanText . viewLE userId) log)
-
--- This may result in very bad performance
-cleanText :: Text -> Text
-cleanText t = let
-  stripedText = T.strip t
-  in if T.null stripedText
-     then stripedText
-     else stripedText `T.snoc` '\n'
+viewLog userId log = T.unlines (map (viewLE userId) log)
 
 -- *** logging helper for the inner circle
 
@@ -220,6 +190,11 @@ logAnEntryI = lift
             . W.tell
             . (:[])
 
+loggsAnEntryI :: (Monad m, MonadTrans t) =>
+                 UserId -> LogEntry -> t (WriterT Log m) ()
+loggsAnEntryI uid = logAnEntryI
+                  . ((show uid ++ ": ") <<>)
+
 logI :: (Monad m, MonadTrans t) =>
         String -> t (WriterT Log m) ()
 logI = logAnEntryI
@@ -227,20 +202,17 @@ logI = logAnEntryI
 
 loggsI :: (Monad m, MonadTrans t) =>
           UserId -> String -> t (WriterT Log m) ()
-loggsI uid = logAnEntryI
-           . ((show uid ++ ": ") <<>)
+loggsI uid = (uid `loggsAnEntryI`)
            . fromString
 
 logggsI :: (Monad m, MonadTrans t) =>
           UserId -> String -> String -> t (WriterT Log m) ()
-logggsI uid unrestricted = logAnEntryI
-                         . ((show uid ++ ": ") <<>)
+logggsI uid unrestricted = (uid `loggsAnEntryI`)
                          . mkUserLogEntry uid unrestricted
 
 alogI :: (Monad m, MonadTrans t) =>
         String -> String -> t (WriterT Log m) ()
-alogI unrestricted = logAnEntryI
-                   . ((show Admin ++ ": ") <<>)
+alogI unrestricted = (Admin `loggsAnEntryI`)
                    . mkALogEntry unrestricted
 
 --------------------------------------------------------------------------------

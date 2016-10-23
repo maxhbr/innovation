@@ -38,6 +38,8 @@ library
                      , Game.Innovation.Rules
                      , Game.Innovation.Cards
                      , Game.Innovation.TypesLenses
+                     , Game.MetaGame.Ask
+  other-modules:       System.HsTColors
 
 
 executable innovation

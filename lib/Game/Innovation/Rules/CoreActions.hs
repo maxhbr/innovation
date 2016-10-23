@@ -114,8 +114,7 @@ drawOfAnd inputAge = mkA $ \userId -> do
       S.modify $ L.over L.drawStacks (Map.insert age rest)
       case cards of
         [card] -> do
-          logAnEntry ("draw the card " <<> view card)
-          (userId `logggs` ("draw the card " ++ show card)) ("draw a card of age " ++ show age)
+          userId `loggsAnEntry` ("draw the card " <<> view card)
           return [card]
         []     -> logTODO "tried to draw above Age10, endgame..."
         _      -> logFatal "should not be reacheable"
@@ -138,7 +137,7 @@ putIntoPlay :: [Card] -> Action Board
 putIntoPlay card = mkA $ \userId -> let
   put1IntoPlay :: Card -> MoveType Board ()
   put1IntoPlay card = do
-    userId `loggs` ("put the card " ++ show card ++ " into play")
+    userId `loggsAnEntry` ("put the card " <<> view card <>> " into play")
     let color = _color card
     modifyPlayer userId $ L.over L.playStacks (Map.adjust (pushCard card) color)
   in mapM_ put1IntoPlay card
