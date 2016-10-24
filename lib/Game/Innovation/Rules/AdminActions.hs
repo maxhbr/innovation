@@ -33,10 +33,9 @@ drawDominations = M $ mapM_ (\age -> do
                                 S.modify (L.over L.dominateables (pushCards d))
                                 S.modify (L.over L.drawStacks (Map.insert age ds))) ages
 
-shuffle :: Int -> Move Board
+shuffle :: Seed -> Move Board
 shuffle seed = M $ do
-  alog ("Shuffle with seed [" ++ show seed ++ "]")
-        "Shuffle with seed [only visible for admin]"
+  logAnEntry ("Shuffle with " <<> view seed)
   S.modify (shuffleState seed)
 
 addPlayer :: String -> Move Board

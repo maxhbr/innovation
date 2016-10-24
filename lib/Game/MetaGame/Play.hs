@@ -1,24 +1,11 @@
 module Game.MetaGame.Play
        where
 import           Prelude hiding (log)
-import           Data.Proxy
-import           Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
-import           Data.Maybe
 import           Data.Monoid
 import           Control.Monad
-import           Control.Monad.Identity
 import           Control.Monad.Trans.Class
-import           Control.Monad.Trans.Writer (WriterT)
 import qualified Control.Monad.Trans.Writer as W
-import           Control.Monad.Trans.Except (ExceptT)
-import qualified Control.Monad.Trans.Except as E
-import           Control.Monad.Trans.Reader (Reader, ReaderT)
-import qualified Control.Monad.Trans.Reader as R
-import           Control.Monad.Trans.State.Lazy (State, StateT)
-import qualified Control.Monad.Trans.State.Lazy as S
-import qualified Control.Lens as L
+import qualified System.HsTColors as HsT
 
 import           Game.MetaGame.Types
 import           Game.MetaGame.Helper
@@ -40,6 +27,7 @@ generateNextTurnMessage = undefined -- TODO
 runTurn :: BoardC board =>
            board -> Turn board ->InnerMoveType board board
 runTurn b0 turn@(Turn userId actionToken choices) = do
+  logAnEntryI ((((HsT.mkBlue "=>") ++ " Turn of ") <<> (view userId)) <> (": " <<> (getLE b0 actionToken)))
   case (getMachineState' b0) of
     Prepare -> unless (userId == Admin) $
                  logErrorI "only admin is allowed to take turns in the prepare phase"
@@ -57,6 +45,7 @@ runTurn b0 turn@(Turn userId actionToken choices) = do
     Right ((_, b1), unconsumedChoices) -> do -- ^ Turn completed
       unless (null unconsumedChoices) $
         logErrorI "not all choices were cosumed"
+      logI "" 
 
       (lift . lift . W.tell) (G [turn])
       return $ advancePlayerOrder b1

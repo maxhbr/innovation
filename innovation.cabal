@@ -28,6 +28,12 @@ library
                      , Game.MetaGame.Helper
                      , Game.MetaGame.Play
                      , Game.MetaGame.Types
+                     , Game.MetaGame.Types.Core
+                     , Game.MetaGame.Types.Board
+                     , Game.MetaGame.Types.Inquiry
+                     , Game.MetaGame.Types.Game
+                     , Game.MetaGame.Types.UserInput
+
                      , Game.Innovation
                      , Game.Innovation.Rules.Helper
                      , Game.Innovation.Rules.CoreRules

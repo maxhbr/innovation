@@ -7,23 +7,10 @@ module Game.Innovation.Types
 
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.List as List
 import           Data.String
 import           Data.Proxy
 import           System.Random
 import           System.Random.Shuffle (shuffle')
-import qualified Control.Lens as L
-import           Data.Monoid
-import           Control.Monad.Trans.Identity
-import           Control.Monad.Trans.Class
-import           Control.Monad.Trans.Writer (WriterT)
-import qualified Control.Monad.Trans.Writer as W
-import           Control.Monad.Trans.Except (ExceptT)
-import qualified Control.Monad.Trans.Except as E
-import           Control.Monad.Trans.State.Lazy (StateT)
-import qualified Control.Monad.Trans.State.Lazy as S
 
 import qualified System.HsTColors as HsT
 
@@ -75,7 +62,7 @@ getDSymbol :: Dogma -> Symbol
 getDSymbol (Dogma symb _ _)   = symb
 getDSymbol (IDemand symb _ _) = symb
 
-getDAction :: Dogma -> (Action Board)
+getDAction :: Dogma -> Action Board
 getDAction (Dogma _ _ a)   = a
 getDAction (IDemand _ _ a) = a
 
@@ -105,25 +92,35 @@ data Productions
                 , _brProd :: Production }
   deriving (Eq,Show)
 
+data CardId = CardId { unpackCardId :: String }
+            deriving (Eq, Show, Read)
+
+instance View CardId where
+  showRestricted (CardId cardId) = cardId
+  showUnrestricted (CardId cardId) = cardId
+
+instance Ord CardId where
+  compare (CardId c1) (CardId c2) = compare c1 c2
+
 data Card
   = Card { _title       :: String
          , _color       :: Color
          , _age         :: Age
          , _productions :: Productions
          , _dogmas      :: [Dogma] }
-  | CardBackside Age
+--   | CardBackside Age
 
-data CardId = CardId { unpackCardId :: String }
-            deriving (Eq, Show, Read)
+-- toBackside :: Card -> Card
+-- toBackside Card{ _age=a } = CardBackside a
+-- toBackside c              = c
 
 instance Show Card where
   show Card{ _title=t, _age=a } = "[" ++ show a ++ ": " ++ t ++ "]"
+  -- show (CardBackside a)         = "[card of " ++ show a ++ "]"
 
 instance View Card where
   view c@Card{ _color=col } = fromString (mkColored col (show c))
-
-instance Ord CardId where
-  compare (CardId c1) (CardId c2) = compare c1 c2
+  -- view (CardBackside a)     = fromString ("[card of " ++ show a ++ "]")
 
 getCId :: Card -> CardId
 getCId = CardId . show
@@ -323,9 +320,15 @@ mkPlayer playerId = Player (U playerId)
                            (Dominations [])
                            emptyStack
 
+newtype Seed = Seed Int
+             deriving (Show, Eq, Read)
+instance View Seed where
+  showRestricted _ = "[seed only visible for admin]"
+  getOwner _ = Admin
+
 -- | shuffle the draw stacks and the players
-shuffleState :: Int -> Board -> Board
-shuffleState seed board = board{ _drawStacks=permutatedDS, _players=permutatedPlayers }
+shuffleState :: Seed -> Board -> Board
+shuffleState (Seed seed) board = board{ _drawStacks=permutatedDS, _players=permutatedPlayers }
   where
     stdGen = mkStdGen seed
     shuffle []    = []

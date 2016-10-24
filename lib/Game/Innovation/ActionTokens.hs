@@ -66,9 +66,11 @@ instance ActionToken Board StartGame where
       unless (length ps >= 2 && length ps <= 4)
         (logError "Numer of players is not valid")
     setDeck Cards.getDeck
-    shuffle seed
+    shuffle (Seed seed)
     drawDominations
     handOutInitialCards
+
+  getLE _ (StartGame seed) = "StartGame " <<> view (Seed seed)
 
 -- data DropPlayer = DropPlayer UserId
 --                 deriving (Eq, Show, Read)
@@ -94,6 +96,7 @@ instance ActionToken Board Play where
         modifyPlayer userId $ \p -> p{ _hand=rest }
         userId `takes` putIntoPlay [card]
       Nothing   -> logError "card not in the hand"
+  getLE _ (Play cardId) = "Play " <<> view cardId
 
 -- | Dominate
 data Dominate = Dominate Age
