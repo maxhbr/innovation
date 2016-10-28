@@ -3,24 +3,11 @@
 module Game.MetaGame.Helper
        where
 import           Prelude hiding (log)
-import           Data.Proxy
-import           Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
-import           Data.Maybe
-import           Data.Monoid
-import           Control.Monad
-import           Control.Monad.Identity
 import           Control.Monad.Trans.Class
-import           Control.Monad.Trans.Writer (WriterT)
-import qualified Control.Monad.Trans.Writer as W
-import           Control.Monad.Trans.Except (ExceptT)
 import qualified Control.Monad.Trans.Except as E
-import           Control.Monad.Trans.Reader (Reader, ReaderT)
 import qualified Control.Monad.Trans.Reader as R
-import           Control.Monad.Trans.State.Lazy (State, StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
-import qualified Control.Lens as L
 
 import Game.MetaGame.Types
 
@@ -70,9 +57,9 @@ logWarn = liftFromInner . logWarnI
 -- this ends the game
 logErrorI :: BoardC s =>
                  String -> InnerMoveType s a
-logErrorI error = do
-  logI $ "Error: " ++ error
-  E.throwE $ T.pack error
+logErrorI err = do
+  logI $ "Error: " ++ err
+  E.throwE $ T.pack err
 
 logError :: BoardC s =>
             String -> MoveType s a

@@ -19,32 +19,31 @@ spec = do
     it "empty stack has no production" $ do
       productionsForStack (PlayStack [] NotSplayed) `pShouldBe` (Map.fromList [])
     it  "singleton stack has productions from card" $ do
-      let productions = productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions None None None None) []] NotSplayed)
+      let productions = productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions None None None None) EDogmaChain] NotSplayed)
       productions `pShouldBe` (Map.fromList [])
       mapM_ (\splayState ->
-              productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) []] splayState)
+              productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) EDogmaChain] splayState)
                 `pShouldBe` (Map.fromList [(Crown,1),(Tree,1),(Clock,1)])) [(minBound :: SplayState) ..]
     it  "stack splayed left productions" $
-      productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) []
-                                     ,Card "C2" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) []
-                                     ,Card "C3" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) []] SplayedLeft)
+      productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) EDogmaChain
+                                     ,Card "C2" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) EDogmaChain
+                                     ,Card "C3" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) EDogmaChain] SplayedLeft)
                 `pShouldBe` (Map.fromList [(Crown,1),(Tree,1),(Clock,1),(Castle,2)])
     it  "stack splayed right productions" $
-      productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) []
-                                     ,Card "C2" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) []
-                                     ,Card "C3" Blue Age1 (Productions (Produce Crown) (Produce Tree) None (Produce Castle)) []] SplayedRight)
+      productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) EDogmaChain
+                                     ,Card "C2" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) EDogmaChain
+                                     ,Card "C3" Blue Age1 (Productions (Produce Crown) (Produce Tree) None (Produce Castle)) EDogmaChain] SplayedRight)
                 `pShouldBe` (Map.fromList [(Crown,3),(Tree,2),(Clock,1)])
     it  "stack splayed up productions" $
-      productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) []
-                                     ,Card "C2" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) []
-                                     ,Card "C3" Blue Age1 (Productions (Produce Crown) (Produce Tree) None (Produce Castle)) []] SplayedUp)
+      productionsForStack (PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) EDogmaChain
+                                     ,Card "C2" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) EDogmaChain
+                                     ,Card "C3" Blue Age1 (Productions (Produce Crown) (Produce Tree) None (Produce Castle)) EDogmaChain] SplayedUp)
                 `pShouldBe` (Map.fromList [(Crown,1),(Tree,3),(Clock,1),(Castle,2)])
     it  "stack splayed up symbol counts" $ do
       let player = Player { _playerId = U "test"
-                          , _playStacks = Map.fromList [(Blue
-                                                        , PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) []
-                                                                    ,Card "C2" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) []
-                                                                    ,Card "C3" Blue Age1 (Productions (Produce Crown) (Produce Tree) None (Produce Castle)) []] SplayedUp)]
+                          , _zone = Map.fromList [(Blue, PlayStack [Card "C1" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Clock)) EDogmaChain
+                                                                   ,Card "C2" Blue Age1 (Productions (Produce Crown) None (Produce Tree) (Produce Castle)) EDogmaChain
+                                                                   ,Card "C3" Blue Age1 (Productions (Produce Crown) (Produce Tree) None (Produce Castle)) EDogmaChain] SplayedUp)]
                           , _influence = emptyStack
                           , _dominations = Dominations []
                           , _hand = emptyStack }

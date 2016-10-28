@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Game.Innovation.CardsSpec
        where
 import SpecHelper
@@ -19,11 +20,18 @@ spec =
   describe "Game.Innovation.Cards" $ do
     it "All IDemand descriptions should start with \"I demand \"" $ do
       let prefix = "I demand "
-      let dogmas = concatMap _dogmas getCards
+      let dogmass = map _dogmas getCards
+      let test' = \case
+            (IDemand _ desc _) -> T.unpack desc `shouldStartWith` prefix
+            (GenIDemand _ desc _) -> T.unpack desc `shouldStartWith` prefix
+            (Dogma _ desc _)   -> T.unpack desc `shouldNotContain` prefix
+            (GenDogma _ desc _)   -> T.unpack desc `shouldNotContain` prefix
       let test = \case
-            (IDemand _ desc _) -> desc `shouldStartWith` prefix
-            (Dogma _ desc _)   -> desc `shouldNotContain` prefix
-      mapM_ test dogmas
+            EDogmaChain     -> pure ()
+            DogmaChain d ds -> do
+              test' d
+              -- test ds -- TODO
+      mapM_ test dogmass
     it "All cards should have three productions" $ do
       let productionss = map _productions getCards
       let test = \case

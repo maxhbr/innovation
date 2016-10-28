@@ -4,20 +4,11 @@ module Game.Innovation.Rules.CoreActions
     where
 
 import           Prelude hiding (log)
-import           Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.List as List
 import           Data.Maybe
-import           Data.String
 import           Control.Monad
-import           Control.Monad.Trans.Class
-import           Control.Monad.Trans.Writer (WriterT)
-import qualified Control.Monad.Trans.Writer as W
-import           Control.Monad.Trans.Except (ExceptT)
-import qualified Control.Monad.Trans.Except as E
-import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
-import           Data.Proxy
 import qualified Control.Lens as L
 import qualified Control.Arrow as Arr
 
@@ -34,6 +25,8 @@ data Skip = Skip
           deriving (Eq, Show, Read)
 instance ActionToken Board Skip where
   getAction Skip = skip
+
+instance View Skip
 
 pushCards :: Stack a =>
              [Card] -> a -> a
@@ -79,27 +72,6 @@ pushCard :: Stack a =>
             Card -> a -> a
 pushCard c = pushCards [c]
 
--- takeTheCard :: CardId -> Stack -> (Maybe Card, Stack)
--- takeTheCard cid cs = let
---   (c1,c2) = List.partition (\c -> getCId c == cid) cs
---   in case c1 of
---     [c] -> (Just c, c2)
---     []  -> (Nothing, c2)
---     _   -> undefined -- TODO: should not be reacheable
-
--- takeN :: Int -> Stack -> ([Card], Stack)
--- takeN i s = takeN' i ([],s)
---   where
---     takeN' 0 r            = r
---     takeN' i (cs, [])     = (cs,[])
---     takeN' i (cs, (s:ss)) = takeN' (i-1) (s:cs, ss)
-
--- putAtTop :: [Card] -> Stack -> Stack
--- putAtTop cs = (cs ++)
-
--- putAtBottom :: [Card] -> Stack -> Stack
--- putAtBottom cs = (++ cs)
-
 drawNOfAnd :: Int -> Age -> ActionWR Board [Card]
 drawNOfAnd n age = fmap concat (replicateM n (drawOfAnd age))
 
@@ -133,18 +105,34 @@ putIntoHand :: [Card] -> Action Board
 putIntoHand cards = mkA $ \userId ->
   modifyPlayer userId $ L.over L.hand (onRawStack (cards ++))
 
+popTheCardsOfHand :: [CardId] -> ActionWR Board [Card]
+popTheCardsOfHand cids = mkA $ \uid -> let
+  popTheCardOfHand :: CardId -> MoveType Board Card
+  popTheCardOfHand cid = do
+    hand <- getHandOf uid
+    let (mc, newHand) = popTheCard cid hand
+    case mc of
+      Just c -> do
+        modifyPlayer uid $ \p -> p{ _hand=newHand }
+        return c
+      Nothing -> logError "card not in the hand"
+  in mapM popTheCardOfHand cids
+
 putIntoPlay :: [Card] -> Action Board
-putIntoPlay card = mkA $ \userId -> let
+putIntoPlay cards = mkA $ \userId -> let
   put1IntoPlay :: Card -> MoveType Board ()
   put1IntoPlay card = do
     userId `loggsAnEntry` ("put the card " <<> view card <>> " into play")
     let color = _color card
-    modifyPlayer userId $ L.over L.playStacks (Map.adjust (pushCard card) color)
-  in mapM_ put1IntoPlay card
+    modifyPlayer userId $ L.over L.zone (Map.adjust (pushCard card) color)
+  in mapM_ put1IntoPlay cards
 
 score :: [Card] -> Action Board
 score cards = mkA $ \userId ->
   modifyPlayer userId $ L.over L.influence (pushCards cards)
+
+putTheHandCardsIntoPlay :: [CardId] -> Action Board
+putTheHandCardsIntoPlay cards = popTheCardsOfHand cards >>= putIntoPlay
 
 --------------------------------------------------------------------------------
 -- * complex Actions
@@ -153,7 +141,8 @@ score cards = mkA $ \userId ->
 -- ** Domination related Actions
 
 dominateAge :: Age -> Action Board
-dominateAge age = mkA $ \userId -> undefined
+dominateAge age = mkA $ \userId -> do
+    logTODO "check prerequisits"
   -- let
   -- dominateAge' :: Stack -> Stack -> (Maybe Card, Stack)
   -- dominateAge' scanned []                     = (Nothing, scanned)
@@ -184,13 +173,17 @@ getAffectedOrder affected = let
     return (filter (`elem` affected) order)
 
 runDogmasOfCard :: Card -> Action Board
-runDogmasOfCard Card { _dogmas=ds } = runDogmas ds
+runDogmasOfCard Card { _dogmas=ds } = runDogmas ds ()
 
-runDogmas :: [Dogma] -> Action Board
-runDogmas = mapM_ runDogma
+runDogmas :: DogmaChain a () -> a -> Action Board
+runDogmas EDogmaChain       _ = pure ()
+runDogmas (DogmaChain d ds) a = do
+  r <- runDogma d a
+  runDogmas ds r
 
-runDogma :: Dogma -> Action Board
-runDogma dogma = let
+runDogma :: Monoid b =>
+            DogmaWR a b -> a -> ActionWR Board b
+runDogma dogma a = let
   symb = getDSymbol dogma
   comperator callersNum = case dogma of
     Dogma{}   -> (>= callersNum)
@@ -199,4 +192,13 @@ runDogma dogma = let
     callersNum <- getProductionsForSymbolOf symb uid
     affected <- getUidsWith (comperator callersNum . productionsForSymbolOf symb)
     orderedAffected <- getAffectedOrder affected
-    mapM_ (`takes` getDAction dogma) orderedAffected
+    fmap mconcat (mapM (`takes` getDAction dogma a) orderedAffected)
+
+activate  :: Color -> Action Board
+activate color = mkA $ \userId -> do
+  ps <- getPlayStackByColorOf color userId
+  when (isEmptyStack ps)
+    (logError $ "Stack of color " ++ show color ++ " is empty")
+  let activeCard = (head . getRawStack) ps
+  userId `loggsAnEntry` ("activate the card " <<> view activeCard)
+  userId `takes` runDogmasOfCard activeCard

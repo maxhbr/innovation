@@ -4,23 +4,25 @@ module Game.Innovation.Rules.Helper
 import           Prelude hiding (log)
 import           Data.Map (Map)
 import qualified Data.Map as Map
-import           Data.Maybe
 import           Control.Monad.Trans.Class
-import           Control.Monad.Trans.Writer (WriterT)
-import qualified Control.Monad.Trans.Writer as W
-import           Control.Monad.Trans.Except (ExceptT)
-import qualified Control.Monad.Trans.Except as E
-import           Control.Monad.Trans.Reader (Reader, ReaderT)
 import qualified Control.Monad.Trans.Reader as R
-import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
-import           Data.Proxy
 import qualified Control.Lens as L
 
 import           Game.MetaGame
 import           Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
-import           Game.Innovation.Rules.CoreRules
+import           Game.Innovation.Rules.CoreRules ()
+
+liftToGet :: (Player -> a) -> UserId -> MoveType Board a
+liftToGet f uid = do
+  player <- getPlayerById uid
+  return (f player)
+
+lift2ToGet :: (b -> Player -> a) -> b -> UserId -> MoveType Board a
+lift2ToGet f b uid = do
+  player <- getPlayerById uid
+  return (f b player)
 
 --------------------------------------------------------------------------------
 -- Helper functions
@@ -50,7 +52,7 @@ getUidsWith t = do
 
 ageOf :: Player -> Age
 ageOf player = let
-  currentAges = (map (_age . head . getRawStack) . filter (not . isEmptyStack) . Map.elems) (_playStacks player)
+  currentAges = (map (_age . head . getRawStack) . filter (not . isEmptyStack) . Map.elems) (_zone player)
   in if currentAges /= []
      then maximum currentAges
      else Age1
@@ -79,13 +81,14 @@ getDrawAge = R.ask >>= (lift . getDrawAgeOf)
 -- Getter for visible productions and related symbols
 --------------------------------------------------------------------------------
 
+getHandOf :: UserId -> MoveType Board Hand
+getHandOf = liftToGet _hand
+
 playStackByColorOf :: Color -> Player -> PlayStack
-playStackByColorOf col player = stackFromMapBy col (L.view L.playStacks player)
+playStackByColorOf col player = stackFromMapBy col (L.view L.zone player)
 
 getPlayStackByColorOf :: Color -> UserId -> MoveType Board PlayStack
-getPlayStackByColorOf col uid = do
-  player <- getPlayerById uid
-  return (playStackByColorOf col player)
+getPlayStackByColorOf = lift2ToGet playStackByColorOf
 
 listToFrequency :: Ord a =>
                    [a] -> Map a Int
@@ -103,7 +106,7 @@ productionsForStack' (PlayStack (c:cs) splayState) = productionsForStack' (PlayS
     prodOfInactive = concatMap (getVisible splayState) cs
 
     getVisible :: SplayState -> Card -> [Production]
-    getVisible s c = map (\l -> (L.view l . _productions) c) (getLenses s)
+    getVisible state card = map (\l -> (L.view l . _productions) card) (getLenses state)
 
     getLenses SplayedLeft  = [ L.brProd ]
     getLenses SplayedRight = [ L.tlProd, L.blProd ]
@@ -120,9 +123,7 @@ productionsOf :: Player -> Map Symbol Int
 productionsOf player = Map.unionsWith (+) (map (`productionsForColorOf` player) colors)
 
 getProductionsOf :: UserId -> MoveType Board (Map Symbol Int)
-getProductionsOf uid = do
-  player <- getPlayerById uid
-  return (productionsOf player)
+getProductionsOf = liftToGet productionsOf
 
 getProductionsForSymbolOf :: Symbol -> UserId -> MoveType Board Int
 getProductionsForSymbolOf symb uid = fmap (Map.findWithDefault 0 symb) (getProductionsOf uid)
@@ -132,3 +133,10 @@ modifyPlayer userId f = do
   playerToModify <- getPlayerById userId
   let modifiedPlayer = f playerToModify
   S.modify $ \b -> b {_players = modifiedPlayer : filter (\p -> not $ p `hasUId` userId) (_players b)}
+
+playedColorsOf :: Player -> [Color]
+playedColorsOf Player{ _zone=ps } = [c | c <- colors
+                                             , (not . isEmptyStack) (Map.findWithDefault emptyStack c ps)]
+
+getPlayedColorsOf :: UserId -> MoveType Board [Color]
+getPlayedColorsOf = liftToGet playedColorsOf

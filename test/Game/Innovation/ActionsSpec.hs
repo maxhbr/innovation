@@ -15,7 +15,7 @@ import Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
 import Game.Innovation.ActionTokens
 
-seed = 12345 :: Int
+seed = 1234 :: Int
 
 printLog = TIO.putStrLn . viewLog Admin . extractLog
 
@@ -72,7 +72,7 @@ spec = let
       (state, playResult) <- isSuccessfullGameWithoutWinner emptyGame
       L.view L.players state `shouldBe` []
       L.view L.machineState state `shouldBe` Prepare
-      (viewLog Admin . extractLog) playResult `shouldBe` (T.pack "")
+      (T.unpack . viewLog Admin . extractLog) playResult `shouldContain` "should continue to setup the game"
 
     let toEarlyStartedGame = emptyGame <=> (Admin `does` StartGame seed)
     it "just start" $ do
@@ -94,9 +94,10 @@ spec = let
                           mkG [ Admin `does` AddPlayer "user1"
                               , Admin `does` AddPlayer "user2" ]
     it "just addPlayers" $ do
-      (state, _) <- isSuccessfullGameWithoutWinner gameWithPlayers
+      (state, playResult) <- isSuccessfullGameWithoutWinner gameWithPlayers
       map getUId (L.view L.players state) `shouldBe` [U "user2", U "user1"]
       L.view L.machineState state `shouldBe` Prepare
+      (T.unpack . viewLog Admin . extractLog) playResult `shouldContain` "should continue to setup the game"
 
     let startedGame = gameWithPlayers <=> (Admin `does` StartGame seed)
     it "just addPlayers + StartGame" $ do
@@ -111,6 +112,25 @@ spec = let
     --   length (L.view L.players state) `shouldBe` 2
     --   L.view L.machineState state `shouldNotBe` Prepare
     --   exactlyAllCardsArePresent state `shouldBe` True
+
+    let startedGameCooseOtherInitalCardStupid = startedGameCooseOneInitalCard
+                                     <=> (U "user1" `chooses` (`Answer` [999]))
+                                     <=> (U "user1" `chooses` (`Answer` [0]))
+    it "just addPlayers + StartGame + choose2Stupid" $ do
+      (state, playResult) <- isSuccessfullGameWithoutWinner startedGameCooseOtherInitalCardStupid
+      -- playResult <- isFailedGame startedGameCooseOtherInitalCardStupid
+      let log = (viewLog Admin . extractLog) playResult
+      T.unpack log `shouldContain` "Warning"
+
+    let startedGameCooseOtherInitalCardStupidRecover =
+          startedGameCooseOtherInitalCardStupid
+          <=> (U "user1" `chooses` (`Answer` [0]))
+    it "just addPlayers + StartGame + choose2StupidRecover" $ do
+      (state, _) <- isSuccessfullGameWithoutWinner startedGameCooseOtherInitalCardStupidRecover
+
+      length (L.view L.players state) `shouldBe` 2
+      L.view L.machineState state `shouldNotBe` Prepare
+      exactlyAllCardsArePresent state `shouldBe` True
 
     let startedGameCooseOtherInitalCard = startedGameCooseOneInitalCard
                                      <=> (U "user1" `chooses` (`Answer` [1]))
@@ -153,12 +173,21 @@ spec = let
       T.unpack log `shouldContain` "Error"
 
     let playValidCard = someActionsTaken <=>
-                        (U "user2" `does` Play (CardId "[Age10: Databases]"))
+                        (U "user2" `does` Play (CardId "[Age1: The Wheel]"))
     it "just addPlayers + StartGame + draw + play" $ do
       (state, _) <- isSuccessfullGameWithoutWinner playValidCard
       length (L.view L.players state) `shouldBe` 2
       L.view L.machineState state `shouldNotBe` Prepare
       exactlyAllCardsArePresent state `shouldBe` True
+
+    let activateStupidCard = playValidCard <>
+                            mkG [ U "user1" `does` Draw
+                                , U "user1" `does` Draw
+                                , U "user2" `does` Activate Red]
+    it "just addPlayers + StartGame + draw + play + activateStupid" $ do
+      playResult <- isFailedGame activateStupidCard
+      let log = (viewLog Admin . extractLog) playResult
+      T.unpack log `shouldContain` "Error"
 
     let activateValidCard = playValidCard <>
                             mkG [ U "user1" `does` Draw
@@ -166,6 +195,24 @@ spec = let
                                 , U "user2" `does` Activate Green]
     it "just addPlayers + StartGame + draw + play + activate" $ do
       (state, _) <- isSuccessfullGameWithoutWinner activateValidCard
+      length (L.view L.players state) `shouldBe` 2
+      L.view L.machineState state `shouldNotBe` Prepare
+      exactlyAllCardsArePresent state `shouldBe` True
+
+    let activateValidCardAndPlay = activateValidCard <=>
+                        (U "user2" `does` Play (CardId "[Age1: Writing]"))
+    it "just addPlayers + StartGame + draw + play + activate + play" $ do
+      (state, _) <- isSuccessfullGameWithoutWinner activateValidCardAndPlay
+      length (L.view L.players state) `shouldBe` 2
+      L.view L.machineState state `shouldNotBe` Prepare
+      exactlyAllCardsArePresent state `shouldBe` True
+
+    let activateValidCardAndPlayAndActivate = activateValidCardAndPlay <>
+                            mkG [ U "user1" `does` Draw
+                                , U "user1" `does` Draw
+                                , U "user2" `does` Activate Blue]
+    it "just addPlayers + StartGame + draw + play + activate + play + activate" $ do
+      (state, _) <- isSuccessfullGameWithoutWinner activateValidCardAndPlayAndActivate
       length (L.view L.players state) `shouldBe` 2
       L.view L.machineState state `shouldNotBe` Prepare
       exactlyAllCardsArePresent state `shouldBe` True

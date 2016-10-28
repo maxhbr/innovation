@@ -1,16 +1,24 @@
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Game.Innovation.Types
        where
 
 import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Data.String
+import           Data.Text (Text)
+import qualified Data.Text as T
 import           Data.Proxy
 import           System.Random
 import           System.Random.Shuffle (shuffle')
+import           Control.Monad.Trans.Writer (WriterT)
+import qualified Control.Monad.Trans.Writer as W
+import           Control.Monad.Trans.Reader (ReaderT)
+import qualified Control.Monad.Trans.Reader as R
 
 import qualified System.HsTColors as HsT
 
@@ -51,20 +59,49 @@ symbols = [minBound ..]
 -- Dogmas
 --------------------------------------------------------------------------------
 
-data Dogma
-  = Dogma Symbol String (Action Board)
-  | IDemand Symbol String (Action Board)
-instance Show Dogma where
-  show (Dogma s d _)   = "[" ++ show s ++ "] " ++ d
-  show (IDemand s d _) = "[" ++ show s ++ "] " ++ d
+type WithInputAndOutput a b m = ReaderT a (WriterT b m)
 
-getDSymbol :: Dogma -> Symbol
-getDSymbol (Dogma symb _ _)   = symb
-getDSymbol (IDemand symb _ _) = symb
+data DogmaWR a b
+  = Dogma Symbol Text (Action Board)
+  | GenDogma Symbol Text (WithInputAndOutput a b (ActionWR Board) ())
+  | IDemand Symbol Text (Action Board)
+  | GenIDemand Symbol Text (WithInputAndOutput a b (ActionWR Board) ())
+instance Show (DogmaWR a b) where
+  show (Dogma s d _)      = "[" ++ show s ++ "] " ++ T.unpack d
+  show (GenDogma s d _)   = "[" ++ show s ++ "] " ++ T.unpack d
+  show (IDemand s d _)    = "[" ++ show s ++ "] " ++ T.unpack d
+  show (GenIDemand s d _) = "[" ++ show s ++ "] " ++ T.unpack d
+type Dogma = DogmaWR () ()
 
-getDAction :: Dogma -> Action Board
-getDAction (Dogma _ _ a)   = a
-getDAction (IDemand _ _ a) = a
+getDSymbol :: DogmaWR a b -> Symbol
+getDSymbol (Dogma symb _ _)      = symb
+getDSymbol (GenDogma symb _ _)   = symb
+getDSymbol (IDemand symb _ _)    = symb
+getDSymbol (GenIDemand symb _ _) = symb
+
+getDDesc :: DogmaWR a b -> Text
+getDDesc (Dogma _ text _)      = text
+getDDesc (GenDogma _ text _)   = text
+getDDesc (IDemand _ text _)    = text
+getDDesc (GenIDemand _ text _) = text
+
+getDAction :: Monoid b =>
+              DogmaWR a b -> a -> ActionWR Board b
+getDAction (Dogma _ _ act)      _ = act >> return mempty
+getDAction (GenDogma _ _ act)   a = fmap snd (W.runWriterT (R.runReaderT act a))
+getDAction (IDemand _ _ act)    _ = act >> return mempty
+getDAction (GenIDemand _ _ act) a = fmap snd (W.runWriterT (R.runReaderT act a))
+
+data DogmaChain a c
+  = EDogmaChain
+  | forall b.
+    Monoid b =>
+    DogmaChain (DogmaWR a b) (DogmaChain b c)
+
+type Dogmas = DogmaChain () ()
+
+dogmasFromList :: [DogmaWR () ()] -> Dogmas
+dogmasFromList = foldr DogmaChain EDogmaChain
 
 --------------------------------------------------------------------------------
 -- Cards
@@ -93,11 +130,12 @@ data Productions
   deriving (Eq,Show)
 
 data CardId = CardId { unpackCardId :: String }
-            deriving (Eq, Show, Read)
+            deriving (Eq, Read)
 
-instance View CardId where
-  showRestricted (CardId cardId) = cardId
-  showUnrestricted (CardId cardId) = cardId
+instance Show CardId where
+  show (CardId cardId) = cardId
+
+instance View CardId
 
 instance Ord CardId where
   compare (CardId c1) (CardId c2) = compare c1 c2
@@ -107,23 +145,24 @@ data Card
          , _color       :: Color
          , _age         :: Age
          , _productions :: Productions
-         , _dogmas      :: [Dogma] }
---   | CardBackside Age
+         , _dogmas      :: Dogmas }
+--  | CardId String
+--  | CardBackside Age
+
+getCId :: Card -> CardId
+getCId Card{ _title=t, _age=a } = CardId ("[" ++ show a ++ ": " ++ t ++ "]")
 
 -- toBackside :: Card -> Card
 -- toBackside Card{ _age=a } = CardBackside a
 -- toBackside c              = c
 
 instance Show Card where
-  show Card{ _title=t, _age=a } = "[" ++ show a ++ ": " ++ t ++ "]"
+  show = show . getCId
   -- show (CardBackside a)         = "[card of " ++ show a ++ "]"
 
 instance View Card where
   view c@Card{ _color=col } = fromString (mkColored col (show c))
   -- view (CardBackside a)     = fromString ("[card of " ++ show a ++ "]")
-
-getCId :: Card -> CardId
-getCId = CardId . show
 
 instance Eq Card where
   c1 == c2 = getCId c1 == getCId c2
@@ -239,7 +278,7 @@ instance View SplayState
 
 data Player
   = Player { _playerId    :: UserId
-           , _playStacks  :: Map Color PlayStack
+           , _zone        :: Map Color PlayStack
            , _influence   :: Influence
            , _dominations :: Dominations
            , _hand        :: Hand }
@@ -323,7 +362,7 @@ mkPlayer playerId = Player (U playerId)
 newtype Seed = Seed Int
              deriving (Show, Eq, Read)
 instance View Seed where
-  showRestricted _ = "[seed only visible for admin]"
+  showUnrestricted _ = "[seed only visible for admin]"
   getOwner _ = Admin
 
 -- | shuffle the draw stacks and the players

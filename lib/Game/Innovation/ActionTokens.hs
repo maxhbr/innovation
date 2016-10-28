@@ -47,6 +47,7 @@ onlyPrepareState = do
 -- add an player with a given playerId to the game
 data AddPlayer = AddPlayer String
                deriving (Eq, Show, Read)
+instance View AddPlayer
 instance ActionToken Board AddPlayer where
   stateMatchesExpectation _ = onlyPrepareState
 
@@ -56,6 +57,8 @@ instance ActionToken Board AddPlayer where
 -- finish preperations of the game
 data StartGame = StartGame Int
                deriving (Eq, Show, Read)
+instance View StartGame where
+  view (StartGame seed) = "StartGame " <<> view (Seed seed)
 instance ActionToken Board StartGame where
   stateMatchesExpectation _ = onlyPrepareState
 
@@ -70,8 +73,6 @@ instance ActionToken Board StartGame where
     drawDominations
     handOutInitialCards
 
-  getLE _ (StartGame seed) = "StartGame " <<> view (Seed seed)
-
 -- data DropPlayer = DropPlayer UserId
 --                 deriving (Eq, Show, Read)
 
@@ -81,38 +82,28 @@ instance ActionToken Board StartGame where
 -- | Draw
 data Draw = Draw
           deriving (Eq, Read, Show)
+instance View Draw
 instance ActionToken Board Draw where
   getAction Draw = drawAnd >>= putIntoHand
 
 -- | Play
 data Play = Play CardId
           deriving (Eq, Read, Show)
+instance View Play where
+  view (Play cardId) = "Play " <<> view cardId
 instance ActionToken Board Play where
-  getAction (Play cardId) = mkA $ \userId -> do
-    player <- getPlayerById userId
-    let (cardM, rest) = popTheCard cardId $ L.view L.hand player
-    case cardM of
-      Just card -> do
-        modifyPlayer userId $ \p -> p{ _hand=rest }
-        userId `takes` putIntoPlay [card]
-      Nothing   -> logError "card not in the hand"
-  getLE _ (Play cardId) = "Play " <<> view cardId
+  getAction (Play cardId) = putTheHandCardsIntoPlay [cardId]
 
 -- | Dominate
 data Dominate = Dominate Age
               deriving (Eq, Read, Show)
+instance View Dominate
 instance ActionToken Board Dominate where
-  getAction (Dominate age) = mkA $ \userId -> do
-    logTODO "check prerequisits"
-    userId `takes` dominateAge age
+  getAction (Dominate age) = dominateAge age
 
 -- | Activate
 data Activate = Activate Color
               deriving (Eq, Read, Show)
+instance View Activate
 instance ActionToken Board Activate where
-  getAction (Activate color) = mkA $ \userId -> do
-    ps <- getPlayStackByColorOf color userId
-    when (isEmptyStack ps)
-      (logError $ "Stack of color " ++ show color ++ " is empty")
-    let activeCard = (head . getRawStack) ps
-    userId `takes` runDogmasOfCard activeCard
+  getAction (Activate color) = activate color

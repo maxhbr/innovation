@@ -11,9 +11,9 @@ module Game.MetaGame.Types.Game
        , InnerMoveType, InnerMoveResult, runInnerMoveType
        , OuterMoveResult, runOuterMoveType
        , MoveType, MoveResult, runMoveType, runMove
-       , MoveWR (..), Move (..)
-       , ActionType (..), runActionType
-       , ActionWR (..), Action (..), takes
+       , MoveWR (..), Move
+       , ActionType, runActionType
+       , ActionWR (..), Action, takes
        , ActionToken (..)
        , Turn (..)
        , Game (..)
@@ -21,23 +21,16 @@ module Game.MetaGame.Types.Game
 
 import           Prelude hiding (log)
 import           Data.String
-import           Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
-import           Data.Maybe
 import           Data.Monoid
-import           Control.Monad
-import           Control.Monad.Identity
-import           Control.Monad.Trans.Class
+import           Data.Text (Text)
 import           Control.Monad.Trans.Writer (Writer, WriterT)
 import qualified Control.Monad.Trans.Writer as W
-import           Control.Monad.Trans.Except (Except, ExceptT)
+import           Control.Monad.Trans.Except (ExceptT)
 import qualified Control.Monad.Trans.Except as E
-import           Control.Monad.Trans.Reader (Reader, ReaderT)
+import           Control.Monad.Trans.Reader (ReaderT)
 import qualified Control.Monad.Trans.Reader as R
 import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
-import qualified Control.Lens as L
 
 import           Game.MetaGame.Types.Core
 import           Game.MetaGame.Types.Board
@@ -149,22 +142,18 @@ type Action board = ActionWR board ()
 takes :: UserId -> ActionWR board r -> MoveType board r
 takes uid = runActionType uid . unpackAction
 
-instance BoardC board =>
-         Monoid (Action board) where
+instance Monoid (Action board) where
   mempty                = A (return mempty)
   mappend (A a1) (A a2) = A (a1 >> a2)
 
-instance BoardC board =>
-         Functor (ActionWR board) where
+instance Functor (ActionWR board) where
   fmap f action = action >>= (return . f)
 
-instance BoardC board =>
-         Applicative (ActionWR board) where
+instance Applicative (ActionWR board) where
   pure r = A (return r)
   (A getF) <*> (A getX) = A (getF <*> getX)
 
-instance BoardC board =>
-         Monad (ActionWR board) where
+instance Monad (ActionWR board) where
   return t    = A (return t)
   (A t) >>= f = A (t >>= (unpackAction . f))
 
@@ -176,7 +165,7 @@ instance BoardC board =>
 -- | an actionToken is something which
 --   - has a Read and a Show instance
 --   - knows its corresponding action
-class (BoardC board, Eq actionToken, Read actionToken, Show actionToken) =>
+class (BoardC board, View actionToken, Eq actionToken, Read actionToken, Show actionToken) =>
       ActionToken board actionToken where
   -- | returns the action corresponding to an Token
   getAction :: actionToken -> Action board
@@ -186,10 +175,6 @@ class (BoardC board, Eq actionToken, Read actionToken, Show actionToken) =>
   stateMatchesExpectation _ = do
     ms <- S.gets getMachineState'
     return (ms == WaitForTurn)
-
-  -- | get the log entry related to an action
-  getLE :: board -> actionToken -> LogEntry
-  getLE proxy = fromString . show
 
 --------------------------------------------------------------------------------
 -- ** Turns
@@ -207,6 +192,10 @@ data Turn board
 instance Show (Turn board) where
   show (Turn Admin actionToken choices)      = show actionToken ++ show choices
   show (Turn (U userId) actionToken choices) = userId ++ ": " ++ show actionToken ++ show choices
+  show (Turn Guest _ _)                      = error "Guest is not allowed to have an turn"
+
+instance View (Turn board) where
+  view (Turn uid actionToken choices) = chownLE uid ((view uid <>> ": ") <> view actionToken) -- <>> ("[" ++ show choices ++ "]")
 
 -- | The `Eq` instance of `Action board` is deriven from the `Show` instance
 instance Eq (Turn board) where

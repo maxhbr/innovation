@@ -10,11 +10,13 @@ module Game.MetaGame.Types.Core
 
 import           Prelude hiding (log)
 import           Data.String
+import           Data.Monoid
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Writer (WriterT)
 import qualified Control.Monad.Trans.Writer as W
+import qualified System.HsTColors as HsT
 
 --------------------------------------------------------------------------------
 -- ** Users and user-related stuff
@@ -157,7 +159,7 @@ logAnEntryI = lift
 loggsAnEntryI :: (Monad m, MonadTrans t) =>
                  UserId -> LogEntry -> t (WriterT Log m) ()
 loggsAnEntryI uid = logAnEntryI
-                  . ((show uid ++ ": ") <<>)
+                  . ((view uid <>> ": ") <>)
 
 logI :: (Monad m, MonadTrans t) =>
         String -> t (WriterT Log m) ()
@@ -199,7 +201,9 @@ class Show a =>
                              ((T.pack . showUnrestricted) a)
                              ((T.pack . showRestricted) a))
 
-instance View UserId
+instance View UserId where
+  view (U uid) = fromString (HsT.mkUnderline uid)
+  view u       = (fromString . HsT.mkUnderline . show) u
 
 instance View LogEntry where
   showRestricted = T.unpack . getRestricted
