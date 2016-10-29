@@ -161,7 +161,8 @@ instance Show Card where
   -- show (CardBackside a)         = "[card of " ++ show a ++ "]"
 
 instance View Card where
-  view c@Card{ _color=col } = fromString (mkColored col (show c))
+  view c@Card{ _color=col } = ULogE Admin (T.pack $ "[Card of " ++ show (_age c) ++"]")
+                                          (T.pack $ mkColored col (show c))
   -- view (CardBackside a)     = fromString ("[card of " ++ show a ++ "]")
 
 instance Eq Card where

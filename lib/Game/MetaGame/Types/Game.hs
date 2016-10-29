@@ -7,7 +7,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Game.MetaGame.Types.Game
        ( PlayerC (..)
-       , BoardC (..), MachineState (..)
        , InnerMoveType, InnerMoveResult, runInnerMoveType
        , OuterMoveResult, runOuterMoveType
        , MoveType, MoveResult, runMoveType, runMove

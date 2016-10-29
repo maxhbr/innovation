@@ -56,7 +56,8 @@ getCommonUID Guest uid = uid
 getCommonUID uid Guest = uid
 getCommonUID Admin _   = Admin
 getCommonUID _   Admin = Admin
-getCommonUID uid1 uid2 = uid1 `getCommonUID` uid2
+getCommonUID uid1 uid2 | uid1 == uid2 = uid1
+                       | otherwise    = Admin
 
 isAuthorizationLevel :: UserId -- ^ the asking user
                      -> UserId -- ^ the user who is to be matched
@@ -159,6 +160,7 @@ logAnEntryI = lift
 loggsAnEntryI :: (Monad m, MonadTrans t) =>
                  UserId -> LogEntry -> t (WriterT Log m) ()
 loggsAnEntryI uid = logAnEntryI
+                  . chownLE uid
                   . ((view uid <>> ": ") <>)
 
 logI :: (Monad m, MonadTrans t) =>

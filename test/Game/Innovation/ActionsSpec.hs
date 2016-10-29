@@ -1,3 +1,5 @@
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE LambdaCase #-}
 module Game.Innovation.ActionsSpec
        where
 import SpecHelper
@@ -8,214 +10,185 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
+import           Control.Monad
 import Game.Innovation.TestHelper
+import Test.Hspec.Core.Spec
+import qualified System.HsTColors as HsT
+-- import Test.Hspec.Core.Spec.Monad
 
 import Game.MetaGame
 import Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
 import Game.Innovation.ActionTokens
 
+data TestGameDesc
+  = TGD { _isFailed :: Bool
+        , _logContians :: Maybe String
+        , _expectedState :: MachineState -> IO ()
+        , _asserts :: PlayResult Board -> IO () }
+
+-- ** Generators
+emptyTGD = TGD False Nothing (const (pure ())) (const (pure ()))
+errorTGD = emptyTGD { _isFailed = True
+                    , _logContians = Just "Error" }
+
+-- ** Modifiers
+withoutWinner tgd = tgd {_asserts=(\playResult -> extractWinner playResult `shouldBe` Nothing)}
+prepareTGD tgd = withoutWinner $ tgd { _expectedState = (`shouldBe` Prepare) }
+waitingForTurnTGD tgd = withoutWinner $ tgd { _expectedState = (`shouldBe` WaitForTurn) }
+waitingForChoiceTGD tgd = withoutWinner $ tgd { _expectedState = \case
+                                   WaitForChoice _ -> pure ()
+                                   _               -> expectationFailure "expected: WaitForChoice" }
+byAdmin tgd = tgd {_asserts=
+                      (\playResult -> (do
+                                          _asserts tgd playResult
+                                          (getCurrentPlayer' . fromJust . extractBoard) playResult `shouldBe` Admin))}
+byUser1 tgd = tgd {_asserts=
+                      (\playResult -> (do
+                                          _asserts tgd playResult
+                                          (getCurrentPlayer' . fromJust . extractBoard) playResult `shouldBe` U "user1"))}
+byUser2 tgd = tgd {_asserts=
+                      (\playResult -> (do
+                                          _asserts tgd playResult
+                                          (getCurrentPlayer' . fromJust . extractBoard) playResult `shouldBe` U "user2"))}
+
+data TestGameStepDefn
+  = TGSD { _desc :: String
+         , _transition :: Game Board -> Game Board
+         , _stateDesc :: TestGameDesc
+         , _persistentAsserts :: PlayResult Board -> IO ()
+         }
+emptyTGSD = TGSD "" id emptyTGD (const (pure ()))
+
+type TestGameDefn = [TestGameStepDefn]
+
+runTestGameStep :: Game Board -> TestGameStepDefn ->  SpecM (Arg (IO ())) (Game Board)
+runTestGameStep game tgsd = do
+  let newGame = (_transition tgsd) game
+  let tgd = _stateDesc tgsd
+  it (_desc tgsd ++ (if _isFailed tgd
+                     then " should fail"
+                     else "")) $ do
+    let playResult = play newGame
+    let stateM = extractBoard playResult
+    when ((not . _isFailed) tgd)
+      (isJust stateM `shouldBe` True)
+
+    -- print log
+    (TIO.putStrLn . viewLog (if ((not . _isFailed) tgd)
+                             then ((getCurrentPlayer' . fromJust) stateM)
+                             else Admin) . extractLog) playResult
+
+    _asserts tgd playResult
+    _persistentAsserts tgsd playResult
+
+    -- check whether log contains potentially given string
+    when (isJust ((_logContians . _stateDesc) tgsd))
+      (do
+          let log = (viewLog Admin . extractLog) playResult
+          (HsT.uncolor . T.unpack) log `shouldContain` (fromJust . _logContians) tgd)
+
+    if ((not . _isFailed) tgd)
+      then (do
+               -- -- history should only be passed through
+               -- let resultGame = extractGame playResult
+               -- show resultGame `shouldBe` show newGame
+
+               (_expectedState tgd) ((getMachineState' . fromJust) stateM))
+      else (isJust stateM `shouldBe` False)
+
+  return (if (_isFailed tgd)
+          then game
+          else newGame)
+
+runTestGame :: Game Board -> TestGameDefn -> Spec
+runTestGame _ [] = pure ()
+runTestGame game (tg:tgs) = do
+  newGame <- runTestGameStep game tg
+  runTestGame newGame (map (\tg' -> tg' { _persistentAsserts=_persistentAsserts tg >> _persistentAsserts tg'}) tgs)
+
 seed = 1234 :: Int
 
-printLog = TIO.putStrLn . viewLog Admin . extractLog
+testGame :: TestGameDefn
+testGame = [ emptyTGSD{ _desc = "empty game"
+                      , _stateDesc = (prepareTGD . byAdmin) emptyTGD
+                      }
+           , emptyTGSD{ _desc = "just start empty game"
+                      , _transition = (<=> (Admin `does` StartGame seed))
+                      , _stateDesc = errorTGD
+                      }
+           , emptyTGSD{ _desc = "just start should not recover"
+                      , _transition = (<> mkG [ Admin `does` StartGame seed
+                                              , Admin `does` AddPlayer "user1"
+                                              , Admin `does` AddPlayer "user2"
+                                              , Admin `does` StartGame seed ])
+                      , _stateDesc = errorTGD
+                      }
+           , emptyTGSD{ _desc = "Just add players"
+                      , _stateDesc = (prepareTGD . byAdmin) emptyTGD
+                      , _transition = (<> mkG [ Admin `does` AddPlayer "user1"
+                                              , Admin `does` AddPlayer "user2" ])
+                      }
+           , emptyTGSD{ _desc = "Start"
+                      , _stateDesc = (waitingForChoiceTGD . byUser1) emptyTGD
+                      , _transition = (<=> (Admin `does` StartGame seed))
+                      }
+           , emptyTGSD{ _desc = "Start again"
+                      , _stateDesc = errorTGD
+                      , _transition = (<=> (Admin `does` StartGame seed))
+                      }
+           -- , emptyTGSD{ _desc = "stupid choice of first player"
+           --            , _stateDesc = (waitingForChoiceTGD . byUser1) emptyTGD
+           --            , _transition = (<=> (U "user2" `chooses` (`Answer` [999])))
+           --            }
+           , emptyTGSD{ _desc = "first player should be able to correct answer"
+                      , _stateDesc = (waitingForChoiceTGD . byUser1) emptyTGD
+                      , _transition = (<=> (U "user2" `chooses` (`Answer` [0])))
+                      }
+           , emptyTGSD{ _desc = "second player should be able to choose"
+                      , _stateDesc = (waitingForTurnTGD . byUser1) emptyTGD
+                      , _transition = (<=> (U "user1" `chooses` (`Answer` [1])))
+                      }
+           , emptyTGSD{ _desc = "Just draw twice"
+                      , _stateDesc = (waitingForTurnTGD . byUser2) emptyTGD
+                      , _transition = ( <> mkG [ U "user1" `does` Draw
+                                               , U "user2" `does` Draw])
+                      }
+           , emptyTGSD{ _desc = "put into play stupid"
+                      , _stateDesc = errorTGD
+                      , _transition = (<=> (U "user2" `does` Play (CardId "[Age1: XXX]")))
+                      }
+           , emptyTGSD{ _desc = "put into play"
+                      , _stateDesc = (waitingForTurnTGD . byUser1) emptyTGD
+                      , _transition = (<=> (U "user2" `does` Play (CardId "[Age1: The Wheel]")))
+                      }
+           , emptyTGSD{ _desc = "activateStupid"
+                      , _stateDesc = errorTGD
+                      , _transition = (<> mkG [ U "user1" `does` Draw
+                                              , U "user1" `does` Draw
+                                              , U "user2" `does` Activate Red])
+                      }
+           , emptyTGSD{ _desc = "activate"
+                      , _stateDesc = (waitingForTurnTGD . byUser2) emptyTGD
+                      , _transition = (<> mkG [ U "user1" `does` Draw
+                                              , U "user1" `does` Draw
+                                              , U "user2" `does` Activate Green])
+                      }
+           , emptyTGSD{ _desc = "draw many"
+                      , _stateDesc = (waitingForTurnTGD . byUser2) emptyTGD
+                      , _transition = (<> mkG [ U "user2" `does` Draw
+                                              , U "user1" `does` Draw
+                                              , U "user1" `does` Draw
+                                              , U "user2" `does` Draw
+                                              , U "user2" `does` Draw
+                                              , U "user1" `does` Draw
+                                              , U "user1" `does` Draw
+                                              , U "user2" `does` Draw])
+                      }
+           ]
 
-
-spec :: Spec
-spec = let
-  isSuccessfullGameWithoutWinner game = do
-    let playResult = play game
-    printLog playResult
-
-    extractWinner playResult `shouldBe` Nothing
-
-    let stateM = extractBoard playResult
-    isJust stateM `shouldBe` True
-
-    -- history should only be passed through
-    let resultGame = extractGame playResult
-    show resultGame `shouldBe` show game
-
-    let state = fromJust stateM
-    return (state, playResult)
-
-  isFailedGame game = do
-    let playResult = play game
-    printLog playResult
-
-    extractWinner playResult `shouldBe` Nothing
-    let stateM = extractBoard playResult
-    isJust stateM `shouldBe` False
-
-    -- history should be trimmed to a prefix (in fact the longest valid one)
-    let resultGame = extractGame playResult
-    show game `shouldNotBe` show resultGame
-
-    return playResult
-
-  isGameWithOutstandingQuestions game = do
-    let playResult = play game
-    printLog playResult
-
-    extractWinner playResult `shouldBe` Nothing
-
-    let stateM = extractBoard playResult
-    isJust stateM `shouldBe` True
-
-    undefined -- TODO: check outstanding questions
-
-    return playResult
-
-  in describe "Game.Innovation.Actions.Admin" $ do
-
-    let emptyGame = mkG []
-    it "emty game setup" $ do
-      (state, playResult) <- isSuccessfullGameWithoutWinner emptyGame
-      L.view L.players state `shouldBe` []
-      L.view L.machineState state `shouldBe` Prepare
-      (T.unpack . viewLog Admin . extractLog) playResult `shouldContain` "should continue to setup the game"
-
-    let toEarlyStartedGame = emptyGame <=> (Admin `does` StartGame seed)
-    it "just start" $ do
-      playResult <- isFailedGame toEarlyStartedGame
-      let log = (viewLog Admin . extractLog) playResult
-      T.unpack log `shouldContain` "Error"
-
-    let toEarlyStartedGameTryingtoRecover = toEarlyStartedGame <>
-                     -- the following should not appear in the log
-               mkG [ Admin `does` AddPlayer "user1"
-                   , Admin `does` AddPlayer "user2"
-                   , Admin `does` StartGame seed ]
-    it "just start should not recover" $ do
-      playResult <- isFailedGame toEarlyStartedGameTryingtoRecover
-      let log = (viewLog Admin . extractLog) playResult
-      T.pack "user1" `T.isInfixOf` log `shouldBe` False
-
-    let gameWithPlayers = emptyGame <>
-                          mkG [ Admin `does` AddPlayer "user1"
-                              , Admin `does` AddPlayer "user2" ]
-    it "just addPlayers" $ do
-      (state, playResult) <- isSuccessfullGameWithoutWinner gameWithPlayers
-      map getUId (L.view L.players state) `shouldBe` [U "user2", U "user1"]
-      L.view L.machineState state `shouldBe` Prepare
-      (T.unpack . viewLog Admin . extractLog) playResult `shouldContain` "should continue to setup the game"
-
-    let startedGame = gameWithPlayers <=> (Admin `does` StartGame seed)
-    it "just addPlayers + StartGame" $ do
-      (state, _) <- isSuccessfullGameWithoutWinner startedGame
-      length (L.view L.players state) `shouldBe` 2
-      L.view L.machineState state `shouldNotBe` Prepare
-
-    let startedGameCooseOneInitalCard = startedGame
-                                     <=> (U "user2" `chooses` (`Answer` [0]))
-    -- it "just addPlayers + StartGame + choose1" $ do
-    --   (state, _) <- isGameWithOutstandingQuestions startedGameCooseOneInitalCard
-    --   length (L.view L.players state) `shouldBe` 2
-    --   L.view L.machineState state `shouldNotBe` Prepare
-    --   exactlyAllCardsArePresent state `shouldBe` True
-
-    let startedGameCooseOtherInitalCardStupid = startedGameCooseOneInitalCard
-                                     <=> (U "user1" `chooses` (`Answer` [999]))
-                                     <=> (U "user1" `chooses` (`Answer` [0]))
-    it "just addPlayers + StartGame + choose2Stupid" $ do
-      (state, playResult) <- isSuccessfullGameWithoutWinner startedGameCooseOtherInitalCardStupid
-      -- playResult <- isFailedGame startedGameCooseOtherInitalCardStupid
-      let log = (viewLog Admin . extractLog) playResult
-      T.unpack log `shouldContain` "Warning"
-
-    let startedGameCooseOtherInitalCardStupidRecover =
-          startedGameCooseOtherInitalCardStupid
-          <=> (U "user1" `chooses` (`Answer` [0]))
-    it "just addPlayers + StartGame + choose2StupidRecover" $ do
-      (state, _) <- isSuccessfullGameWithoutWinner startedGameCooseOtherInitalCardStupidRecover
-
-      length (L.view L.players state) `shouldBe` 2
-      L.view L.machineState state `shouldNotBe` Prepare
-      exactlyAllCardsArePresent state `shouldBe` True
-
-    let startedGameCooseOtherInitalCard = startedGameCooseOneInitalCard
-                                     <=> (U "user1" `chooses` (`Answer` [1]))
-    it "just addPlayers + StartGame + choose2" $ do
-      (state, _) <- isSuccessfullGameWithoutWinner startedGameCooseOtherInitalCard
-
-      length (L.view L.players state) `shouldBe` 2
-      L.view L.machineState state `shouldNotBe` Prepare
-      exactlyAllCardsArePresent state `shouldBe` True
-
-    let someActionsTaken = startedGameCooseOtherInitalCard <>
-                           mkG [ U "user1" `does` Draw
-                               , U "user2" `does` Draw]
-    it "just addPlayers + StartGame + draw" $ do
-      (state, _) <- isSuccessfullGameWithoutWinner someActionsTaken
-      length (L.view L.players state) `shouldBe` 2
-      L.view L.machineState state `shouldNotBe` Prepare
-      exactlyAllCardsArePresent state `shouldBe` True
-
-    let drawManyCards = someActionsTaken <>
-                        mkG [ U "user2" `does` Draw
-                            , U "user1" `does` Draw
-                            , U "user1" `does` Draw
-                            , U "user2" `does` Draw
-                            , U "user2" `does` Draw
-                            , U "user1" `does` Draw
-                            , U "user1" `does` Draw
-                            , U "user2" `does` Draw]
-    it "just addPlayers + StartGame + drawMany" $ do
-      (state, _) <- isSuccessfullGameWithoutWinner drawManyCards
-      length (L.view L.players state) `shouldBe` 2
-      L.view L.machineState state `shouldNotBe` Prepare
-      exactlyAllCardsArePresent state `shouldBe` True
-
-    let playCardNotInHand = someActionsTaken <=>
-                           (U "user2" `does` Play (CardId "[Age1: XXX]"))
-    it "just addPlayers + StartGame + draw + playStupid" $ do
-      playResult <- isFailedGame playCardNotInHand
-      let log = (viewLog Admin . extractLog) playResult
-      T.unpack log `shouldContain` "Error"
-
-    let playValidCard = someActionsTaken <=>
-                        (U "user2" `does` Play (CardId "[Age1: The Wheel]"))
-    it "just addPlayers + StartGame + draw + play" $ do
-      (state, _) <- isSuccessfullGameWithoutWinner playValidCard
-      length (L.view L.players state) `shouldBe` 2
-      L.view L.machineState state `shouldNotBe` Prepare
-      exactlyAllCardsArePresent state `shouldBe` True
-
-    let activateStupidCard = playValidCard <>
-                            mkG [ U "user1" `does` Draw
-                                , U "user1" `does` Draw
-                                , U "user2" `does` Activate Red]
-    it "just addPlayers + StartGame + draw + play + activateStupid" $ do
-      playResult <- isFailedGame activateStupidCard
-      let log = (viewLog Admin . extractLog) playResult
-      T.unpack log `shouldContain` "Error"
-
-    let activateValidCard = playValidCard <>
-                            mkG [ U "user1" `does` Draw
-                                , U "user1" `does` Draw
-                                , U "user2" `does` Activate Green]
-    it "just addPlayers + StartGame + draw + play + activate" $ do
-      (state, _) <- isSuccessfullGameWithoutWinner activateValidCard
-      length (L.view L.players state) `shouldBe` 2
-      L.view L.machineState state `shouldNotBe` Prepare
-      exactlyAllCardsArePresent state `shouldBe` True
-
-    let activateValidCardAndPlay = activateValidCard <=>
-                        (U "user2" `does` Play (CardId "[Age1: Writing]"))
-    it "just addPlayers + StartGame + draw + play + activate + play" $ do
-      (state, _) <- isSuccessfullGameWithoutWinner activateValidCardAndPlay
-      length (L.view L.players state) `shouldBe` 2
-      L.view L.machineState state `shouldNotBe` Prepare
-      exactlyAllCardsArePresent state `shouldBe` True
-
-    let activateValidCardAndPlayAndActivate = activateValidCardAndPlay <>
-                            mkG [ U "user1" `does` Draw
-                                , U "user1" `does` Draw
-                                , U "user2" `does` Activate Blue]
-    it "just addPlayers + StartGame + draw + play + activate + play + activate" $ do
-      (state, _) <- isSuccessfullGameWithoutWinner activateValidCardAndPlayAndActivate
-      length (L.view L.players state) `shouldBe` 2
-      L.view L.machineState state `shouldNotBe` Prepare
-      exactlyAllCardsArePresent state `shouldBe` True
+spec = describe "Game.Innovation.Actions" $ do
+  runTestGame (mkG []) testGame
 
 main :: IO ()
 main = hspec spec

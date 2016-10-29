@@ -82,6 +82,7 @@ Test-Suite innovationLibTest
                      , lens
                      
                      , hspec >= 1.3
+                     , hspec-core >= 1.3
                      , QuickCheck
 
 
