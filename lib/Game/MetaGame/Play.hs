@@ -59,7 +59,10 @@ runTurn b0 turn@(Turn userId actionToken choices) = do
         logErrorI "not all choices were cosumed"
 
       (lift . lift . W.tell) (G [turn])
-      return $ advancePlayerOrder b1
+      return (if (userId == Admin)
+              then b1
+              else advancePlayerOrder b1
+             )
 
 --------------------------------------------------------------------------------
 -- * play

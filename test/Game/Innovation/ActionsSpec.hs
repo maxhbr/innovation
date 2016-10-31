@@ -156,37 +156,37 @@ testGame = [ emptyTGSD{ _desc = "empty game"
                       }
            , emptyTGSD{ _desc = "Just draw twice"
                       , _stateDesc = (waitingForTurnTGD . byUser2) emptyTGD
-                      , _transition = ( <> mkG [ user1 `does` Draw
-                                               , user2 `does` Draw])
+                      , _transition = ( <> mkG [ user2 `does` Draw
+                                               , user1 `does` Draw])
                       }
            , errorTGSD{ _desc = "put into play stupid"
-                      , _transition = (<=> (user2 `does` Play (CardId "[Age1: XXX]")))
+                      , _transition = (<=> (user1 `does` Play (CardId "[Age1: XXX]")))
                       }
            , emptyTGSD{ _desc = "put into play"
-                      , _stateDesc = (waitingForTurnTGD . byUser1) emptyTGD
-                      , _transition = (<=> (user2 `does` Play (CardId "[Age1: The Wheel]")))
+                      , _stateDesc = (waitingForTurnTGD . byUser2) emptyTGD
+                      , _transition = (<=> (user1 `does` Play (CardId "[Age1: The Wheel]")))
                       }
-           , errorTGSD{ _desc = "activateStupid"
-                      , _transition = (<> mkG [ user1 `does` Draw
-                                              , user1 `does` Draw
-                                              , user2 `does` Activate Red])
+           , errorTGSD{ _desc = "activate stupid"
+                      , _transition = (<> mkG [ user2 `does` Draw
+                                              , user2 `does` Draw
+                                              , user1 `does` Activate Purple])
                       }
            , emptyTGSD{ _desc = "activate"
                       , _stateDesc = (waitingForTurnTGD . byUser2) emptyTGD
-                      , _transition = (<> mkG [ user1 `does` Draw
-                                              , user1 `does` Draw
-                                              , user2 `does` Activate Green])
+                      , _transition = (<> mkG [ user2 `does` Draw
+                                              , user2 `does` Draw
+                                              , user1 `does` Activate Green])
                       }
            , emptyTGSD{ _desc = "draw many"
                       , _stateDesc = (waitingForTurnTGD . byUser2) emptyTGD
-                      , _transition = (<> mkG [ user2 `does` Draw
-                                              , user1 `does` Draw
-                                              , user1 `does` Draw
+                      , _transition = (<> mkG [ user1 `does` Draw
                                               , user2 `does` Draw
                                               , user2 `does` Draw
                                               , user1 `does` Draw
                                               , user1 `does` Draw
-                                              , user2 `does` Draw])
+                                              , user2 `does` Draw
+                                              , user2 `does` Draw
+                                              , user1 `does` Draw])
                       }
            ]
 

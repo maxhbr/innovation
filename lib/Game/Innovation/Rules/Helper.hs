@@ -50,9 +50,12 @@ getUidsWith t = do
 -- Getter for ages
 --------------------------------------------------------------------------------
 
+getActiveCards :: Player -> RawStack
+getActiveCards player = (map (head . getRawStack) . filter (not . isEmptyStack) . Map.elems) (_zone player)
+
 ageOf :: Player -> Age
 ageOf player = let
-  currentAges = (map (_age . head . getRawStack) . filter (not . isEmptyStack) . Map.elems) (_zone player)
+  currentAges = map _age (getActiveCards player)
   in if currentAges /= []
      then maximum currentAges
      else Age1
@@ -136,7 +139,7 @@ modifyPlayer userId f = do
 
 playedColorsOf :: Player -> [Color]
 playedColorsOf Player{ _zone=ps } = [c | c <- colors
-                                             , (not . isEmptyStack) (Map.findWithDefault emptyStack c ps)]
+                                       , (not . isEmptyStack) (Map.findWithDefault emptyStack c ps)]
 
 getPlayedColorsOf :: UserId -> MoveType Board [Color]
 getPlayedColorsOf = liftToGet playedColorsOf

@@ -6,12 +6,14 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.List as List
 import           Data.Maybe
+import           Control.Monad
 import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
 
 import           Game.MetaGame
 import           Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
+import           Game.Innovation.Rules.Helper
 import           Game.Innovation.Rules.CoreActions
 
 
@@ -40,9 +42,25 @@ addPlayer playerId = M $ do
     _       -> logError "not in prepare state."
 
 determineInitialPlayerOrder :: Move Board
-determineInitialPlayerOrder = M $ do
-  ps <- L.use L.players
-  L.playerOrder L..= map getUId ps -- FALSE! / TODO
+determineInitialPlayerOrder = let
+  finalizeInitialPlayerOrder [p1,p2]       = [p1,p2,p2]
+  finalizeInitialPlayerOrder [p1,p2,p3]    = [p1,p2,p2,p3,p3]
+  finalizeInitialPlayerOrder [p1,p2,p3,p4] = [p1,p2,p3,p3,p4,p4]
+  finalizeInitialPlayerOrder _             = error "in finalizeInitialPlayerOrder"
+  in M $ do
+    ps <- L.use L.players
+    let playedCards = map (\p -> let
+                              playedCard = getActiveCards p
+                              in (getUId p,playedCard)) ps
+    uidWithInitialCard <- mapM (\(p,cs) -> do
+                                   when (length cs /= 1)
+                                     (logError $ "Player " ++ show p ++ "should have played exactly one card")
+                                   return (p, head cs)
+                               ) playedCards
+    let minimalCard = minimum (map snd uidWithInitialCard)
+    let prefix = takeWhile (\(_,c) -> c /= minimalCard) uidWithInitialCard
+    let postfix = dropWhile (\(_,c) -> c /= minimalCard) uidWithInitialCard
+    L.playerOrder L..= finalizeInitialPlayerOrder (map fst (postfix ++ prefix)) -- FALSE! / TODO
 
 handOutInitialCards :: Move Board
 handOutInitialCards = do
@@ -50,7 +68,7 @@ handOutInitialCards = do
      ps <- L.use L.players
      Admin `loggs` "determin first cards"
      initialCards <- mapM ((\uid -> fmap (\l -> (uid,l))
-                                    (uid `takes` drawNOfAnd 2 Age1)) . getUId)
+                                         (uid `takes` drawNOfAnd 2 Age1)) . getUId)
                           ps
      Admin `loggs` "ask for first card"
      answeredQuestions <- mapM (\(uid,cs) -> fmap (\[c] -> (uid, List.partition (==c) cs))

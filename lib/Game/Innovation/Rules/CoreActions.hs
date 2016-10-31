@@ -186,8 +186,10 @@ runDogma :: Monoid b =>
 runDogma dogma a = let
   symb = getDSymbol dogma
   comperator callersNum = case dogma of
-    Dogma{}   -> (>= callersNum)
-    IDemand{} -> (< callersNum)
+    Dogma{}      -> (>= callersNum)
+    GenDogma{}   -> (>= callersNum)
+    IDemand{}    -> (< callersNum)
+    GenIDemand{} -> (< callersNum)
   in mkA $ \uid -> do
     callersNum <- getProductionsForSymbolOf symb uid
     affected <- getUidsWith (comperator callersNum . productionsForSymbolOf symb)
