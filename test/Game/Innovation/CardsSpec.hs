@@ -41,6 +41,7 @@ spec =
             (Productions (Produce _) (Produce _) (Produce _) None       ) -> True
             _                                                             -> False
       all test productionss `shouldBe` True
+    -- it "CardIDs should be unique" $ do
 
 main :: IO ()
 main = hspec spec

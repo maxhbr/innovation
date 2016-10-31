@@ -46,11 +46,11 @@ byAdmin tgd = tgd {_asserts=
 byUser1 tgd = tgd {_asserts=
                       (\playResult -> (do
                                           _asserts tgd playResult
-                                          (getCurrentPlayer' . fromJust . extractBoard) playResult `shouldBe` U "user1"))}
+                                          (getCurrentPlayer' . fromJust . extractBoard) playResult `shouldBe` user1))}
 byUser2 tgd = tgd {_asserts=
                       (\playResult -> (do
                                           _asserts tgd playResult
-                                          (getCurrentPlayer' . fromJust . extractBoard) playResult `shouldBe` U "user2"))}
+                                          (getCurrentPlayer' . fromJust . extractBoard) playResult `shouldBe` user2))}
 
 data TestGameStepDefn
   = TGSD { _desc :: String
@@ -59,6 +59,7 @@ data TestGameStepDefn
          , _persistentAsserts :: PlayResult Board -> IO ()
          }
 emptyTGSD = TGSD "" id emptyTGD (const (pure ()))
+errorTGSD = TGSD "" id errorTGD (const (pure ()))
 
 type TestGameDefn = [TestGameStepDefn]
 
@@ -105,85 +106,87 @@ runTestGame :: Game Board -> TestGameDefn -> Spec
 runTestGame _ [] = pure ()
 runTestGame game (tg:tgs) = do
   newGame <- runTestGameStep game tg
-  runTestGame newGame (map (\tg' -> tg' { _persistentAsserts=_persistentAsserts tg >> _persistentAsserts tg'}) tgs)
+  runTestGame newGame (map (\tg' -> tg' { _persistentAsserts=do
+                                             _persistentAsserts tg
+                                             _persistentAsserts tg'}) tgs)
 
 seed = 1234 :: Int
+user1name = "user1":: String
+user2name = "user2":: String
+user1 = U user1name :: UserId
+user2 = U user2name :: UserId
 
 testGame :: TestGameDefn
 testGame = [ emptyTGSD{ _desc = "empty game"
                       , _stateDesc = (prepareTGD . byAdmin) emptyTGD
                       }
-           , emptyTGSD{ _desc = "just start empty game"
+           , errorTGSD{ _desc = "just start empty game"
                       , _transition = (<=> (Admin `does` StartGame seed))
-                      , _stateDesc = errorTGD
                       }
-           , emptyTGSD{ _desc = "just start should not recover"
+           , errorTGSD{ _desc = "just start should not recover"
                       , _transition = (<> mkG [ Admin `does` StartGame seed
-                                              , Admin `does` AddPlayer "user1"
-                                              , Admin `does` AddPlayer "user2"
+                                              , Admin `does` AddPlayer user1name
+                                              , Admin `does` AddPlayer user2name
                                               , Admin `does` StartGame seed ])
-                      , _stateDesc = errorTGD
                       }
            , emptyTGSD{ _desc = "Just add players"
                       , _stateDesc = (prepareTGD . byAdmin) emptyTGD
-                      , _transition = (<> mkG [ Admin `does` AddPlayer "user1"
-                                              , Admin `does` AddPlayer "user2" ])
+                      , _transition = (<> mkG [ Admin `does` AddPlayer user1name
+                                              , Admin `does` AddPlayer user2name ])
+                      , _persistentAsserts = \playResult -> map getUId (L.view L.players ((fromJust . extractBoard) playResult)) `shouldBe` [user2, user1]
                       }
            , emptyTGSD{ _desc = "Start"
                       , _stateDesc = (waitingForChoiceTGD . byUser1) emptyTGD
                       , _transition = (<=> (Admin `does` StartGame seed))
                       }
-           , emptyTGSD{ _desc = "Start again"
-                      , _stateDesc = errorTGD
+           , errorTGSD{ _desc = "Start again"
                       , _transition = (<=> (Admin `does` StartGame seed))
                       }
            -- , emptyTGSD{ _desc = "stupid choice of first player"
            --            , _stateDesc = (waitingForChoiceTGD . byUser1) emptyTGD
-           --            , _transition = (<=> (U "user2" `chooses` (`Answer` [999])))
+           --            , _transition = (<=> (user2 `chooses` (`Answer` [999])))
            --            }
            , emptyTGSD{ _desc = "first player should be able to correct answer"
                       , _stateDesc = (waitingForChoiceTGD . byUser1) emptyTGD
-                      , _transition = (<=> (U "user2" `chooses` (`Answer` [0])))
+                      , _transition = (<=> (user2 `chooses` (`Answer` [0])))
                       }
            , emptyTGSD{ _desc = "second player should be able to choose"
                       , _stateDesc = (waitingForTurnTGD . byUser1) emptyTGD
-                      , _transition = (<=> (U "user1" `chooses` (`Answer` [1])))
+                      , _transition = (<=> (user1 `chooses` (`Answer` [1])))
                       }
            , emptyTGSD{ _desc = "Just draw twice"
                       , _stateDesc = (waitingForTurnTGD . byUser2) emptyTGD
-                      , _transition = ( <> mkG [ U "user1" `does` Draw
-                                               , U "user2" `does` Draw])
+                      , _transition = ( <> mkG [ user1 `does` Draw
+                                               , user2 `does` Draw])
                       }
-           , emptyTGSD{ _desc = "put into play stupid"
-                      , _stateDesc = errorTGD
-                      , _transition = (<=> (U "user2" `does` Play (CardId "[Age1: XXX]")))
+           , errorTGSD{ _desc = "put into play stupid"
+                      , _transition = (<=> (user2 `does` Play (CardId "[Age1: XXX]")))
                       }
            , emptyTGSD{ _desc = "put into play"
                       , _stateDesc = (waitingForTurnTGD . byUser1) emptyTGD
-                      , _transition = (<=> (U "user2" `does` Play (CardId "[Age1: The Wheel]")))
+                      , _transition = (<=> (user2 `does` Play (CardId "[Age1: The Wheel]")))
                       }
-           , emptyTGSD{ _desc = "activateStupid"
-                      , _stateDesc = errorTGD
-                      , _transition = (<> mkG [ U "user1" `does` Draw
-                                              , U "user1" `does` Draw
-                                              , U "user2" `does` Activate Red])
+           , errorTGSD{ _desc = "activateStupid"
+                      , _transition = (<> mkG [ user1 `does` Draw
+                                              , user1 `does` Draw
+                                              , user2 `does` Activate Red])
                       }
            , emptyTGSD{ _desc = "activate"
                       , _stateDesc = (waitingForTurnTGD . byUser2) emptyTGD
-                      , _transition = (<> mkG [ U "user1" `does` Draw
-                                              , U "user1" `does` Draw
-                                              , U "user2" `does` Activate Green])
+                      , _transition = (<> mkG [ user1 `does` Draw
+                                              , user1 `does` Draw
+                                              , user2 `does` Activate Green])
                       }
            , emptyTGSD{ _desc = "draw many"
                       , _stateDesc = (waitingForTurnTGD . byUser2) emptyTGD
-                      , _transition = (<> mkG [ U "user2" `does` Draw
-                                              , U "user1" `does` Draw
-                                              , U "user1" `does` Draw
-                                              , U "user2" `does` Draw
-                                              , U "user2" `does` Draw
-                                              , U "user1" `does` Draw
-                                              , U "user1" `does` Draw
-                                              , U "user2" `does` Draw])
+                      , _transition = (<> mkG [ user2 `does` Draw
+                                              , user1 `does` Draw
+                                              , user1 `does` Draw
+                                              , user2 `does` Draw
+                                              , user2 `does` Draw
+                                              , user1 `does` Draw
+                                              , user1 `does` Draw
+                                              , user2 `does` Draw])
                       }
            ]
 
