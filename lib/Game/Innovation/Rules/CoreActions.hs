@@ -142,21 +142,17 @@ putTheHandCardsIntoPlay cards = popTheCardsOfHand cards >>= putIntoPlay
 
 dominateAge :: Age -> Action Board
 dominateAge age = mkA $ \userId -> do
-    logTODO "check prerequisits"
-  -- let
-  -- dominateAge' :: Stack -> Stack -> (Maybe Card, Stack)
-  -- dominateAge' scanned []                     = (Nothing, scanned)
-  -- dominateAge' scanned (c:cs) | _age c == age = (Just c, scanned ++ cs)
-  --                             | otherwise     = dominateAge' (c:scanned) cs
-  -- in do
-  -- (mc, ds) <- S.gets ((dominateAge' []) . (L.view L.dominateables))
-  -- case mc of
-  --   Just card -> do
-  --     userId `loggs` ("dominate age " ++ show age)
-
-  --     S.modify $ \b -> b { _dominateables=ds }
-  --     modifyPlayer userId $ L.over L.dominations (card :)
-  --   Nothing   -> logError $ "there is no card of age " ++ show age ++ " to be dominated"
+  influence <- getInfluenceOf userId
+  if (influence < (5 * (fromEnum age) + 5))
+    then logError $ (show userId) ++ "has not enougth influence (only " ++ show influence ++ ")"
+    else do
+    (mc, ds) <- S.gets ((popCardsWith 1 (\c -> _age c == age)) . (L.view L.dominateables))
+    case mc of
+      [c] -> do
+        userId `loggs` ("dominate age " ++ show age)
+        S.modify $ \b -> b { _dominateables=ds }
+        modifyPlayer userId $ L.over L.dominations (addDomination (AgeDomination c))
+      _   -> logError $ "there is no card of age " ++ show age ++ " dominateable"
 
 --------------------------------------------------------------------------------
 -- ** Dogma related Actions

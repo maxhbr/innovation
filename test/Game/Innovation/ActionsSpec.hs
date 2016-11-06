@@ -72,13 +72,14 @@ runTestGameStep game tgsd = do
                      else "")) $ do
     let playResult = play newGame
     let stateM = extractBoard playResult
-    when ((not . _isFailed) tgd)
-      (isJust stateM `shouldBe` True)
 
     -- print log
     (TIO.putStrLn . viewLog (if ((not . _isFailed) tgd)
                              then ((getCurrentPlayer' . fromJust) stateM)
                              else Admin) . extractLog) playResult
+
+    when ((not . _isFailed) tgd)
+      (isJust stateM `shouldBe` True)
 
     _asserts tgd playResult
     _persistentAsserts tgsd playResult
@@ -162,6 +163,9 @@ testGame = [ emptyTGSD{ _desc = "empty game"
            , errorTGSD{ _desc = "put into play stupid"
                       , _transition = (<=> (user1 `does` Play (CardId "[Age1: XXX]")))
                       }
+           , errorTGSD{ _desc = "dominate without influence"
+                      , _transition = (<=> (user1 `does` Dominate Age1))
+                      }
            , emptyTGSD{ _desc = "put into play"
                       , _stateDesc = (waitingForTurnTGD . byUser2) emptyTGD
                       , _transition = (<=> (user1 `does` Play (CardId "[Age1: The Wheel]")))
@@ -176,6 +180,16 @@ testGame = [ emptyTGSD{ _desc = "empty game"
                       , _transition = (<> mkG [ user2 `does` Draw
                                               , user2 `does` Draw
                                               , user1 `does` Activate Green])
+                      }
+           , emptyTGSD{ _desc = "start scoring"
+                      , _stateDesc = (waitingForTurnTGD . byUser2) emptyTGD
+                      , _transition = (<> mkG [ user1 `does` Draw
+                                              , user2 `does` Activate Green
+                                              , user1 `chooses` (`Answer` [0])
+                                              , user2 `does` Activate Green
+                                              , user1 `chooses` (`Answer` [0])
+                                              , user1 `does` Draw
+                                              ])
                       }
            , emptyTGSD{ _desc = "draw many"
                       , _stateDesc = (waitingForTurnTGD . byUser2) emptyTGD

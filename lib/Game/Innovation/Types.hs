@@ -264,6 +264,9 @@ instance Stack Dominateables where
 newtype Dominations = Dominations [Domination]
                       deriving (Show)
 
+addDomination :: Domination -> Dominations -> Dominations
+addDomination d (Dominations ds) = Dominations (d:ds)
+
 instance View [Card] where
   view [] = fromString "[ 0 Cards ]"
   view cs = fromString ("[ " ++ show (length cs) ++ " Cards (head is " ++ show (head cs) ++ " ]")

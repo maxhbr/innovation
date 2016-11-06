@@ -143,3 +143,9 @@ playedColorsOf Player{ _zone=ps } = [c | c <- colors
 
 getPlayedColorsOf :: UserId -> MoveType Board [Color]
 getPlayedColorsOf = liftToGet playedColorsOf
+
+influenceOf :: Player -> Int
+influenceOf = sum . map ((+1) . fromEnum . _age) . getRawStack . _influence
+
+getInfluenceOf :: UserId -> MoveType Board Int
+getInfluenceOf = liftToGet influenceOf

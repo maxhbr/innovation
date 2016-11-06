@@ -4,6 +4,8 @@ module Game.MetaGame.Types.Inquiry
        , Answer (..), answerYes, answerNo
        ) where
 
+import Data.List
+
 import           Game.MetaGame.Types.Core
 
 --------------------------------------------------------------------------------
@@ -35,7 +37,9 @@ instance Eq a =>
 
 instance Show a =>
          Show (Inquiry a) where
-  show inq@(Inquiry ap iq io _) = iq ++ " <- " ++ show ap ++ " (Options are " ++ "TODO" ++ ")"
+  show inq@(Inquiry ap iq ios _) = let
+    showIos = intercalate ", " (map show ios)
+    in iq ++ " <- " ++ show ap ++ " (Options are " ++ showIos ++ ")"
 instance Show a =>
          View (Inquiry a) where
   getOwner (Inquiry ap _ _ _) = ap
