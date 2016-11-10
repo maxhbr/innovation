@@ -1,5 +1,10 @@
 module Game.MetaGame.Play
-       where
+       ( PlayResult
+         -- play
+       , play
+         -- helper functions
+       , extractLog, extractGame, extractBoard, extractWinner
+       ) where
 import           Prelude hiding (log)
 import           Data.Monoid
 import           Control.Monad
@@ -61,8 +66,7 @@ runTurn b0 turn@(Turn userId actionToken choices) = do
       (lift . lift . W.tell) (G [turn])
       return (if (userId == Admin)
               then b1
-              else advancePlayerOrder b1
-             )
+              else advancePlayerOrder b1)
 
 --------------------------------------------------------------------------------
 -- * play

@@ -6,6 +6,7 @@ module Game.Innovation.Cards
     ) where
 
 import Data.Map (Map)
+import Control.Monad
 import qualified Data.Map as Map
 
 import Game.MetaGame
@@ -61,7 +62,10 @@ age1Cards = toAge Age1
          , _productions = Productions (Produce Castle) (Produce Bulb) None (Produce Castle)
          , _dogmas = dogmasFromList
            [ Tree `IDemand` "I demand you draw a [1]! Then, transfer the highest card from your Hand to my Hand!" $
-             skip
+             (\issuingUser -> do
+                 drawOfAnd Age1 >>= putIntoHand
+                 skip
+             )
            ]
          }
   , card { _title = "City-States"
@@ -69,7 +73,14 @@ age1Cards = toAge Age1
          , _productions = Productions None (Produce Crown) (Produce Crown) (Produce Castle)
          , _dogmas = dogmasFromList
            [ Tree `IDemand` "I demand that if you have four (Castle) or more, you transfer an Active card that provides (Castle) to my Zone! If you do, draw a [1]!" $
-             skip
+             (\issuingUser -> do
+                 numCastles <- mkA (getProductionsForSymbolOf Castle)
+                 when (numCastles >= 4)
+                   (do
+                       skip
+                       drawOfAnd Age1 >>= putIntoHand
+                   )
+             )
            ]
          }
   , card { _title = "Clothing"
@@ -116,8 +127,15 @@ age1Cards = toAge Age1
          , _color = Red
          , _productions = Productions (Produce Castle) (Produce Castle) None (Produce Castle)
          , _dogmas = dogmasFromList
-           [ Castle `Dogma` "Draw and reveal a [1]. If it has a [Castle], score it and repeat this dogma effect. Otherwise, keep it" $
-             skip
+           [ Castle `Dogma` "Draw and reveal a [1]. If it has a [Castle], score it and repeat this dogma effect. Otherwise, keep it" $ let
+                dogmaFun = do
+                  card <- drawOfAnd Age1
+                  if (card `providesSymbol` Castle)
+                    then do
+                    score card
+                    dogmaFun
+                    else putIntoHand card
+               in dogmaFun
            ]
          }
   , card { _title = "Mysticism" -- from FAQ
@@ -133,7 +151,8 @@ age1Cards = toAge Age1
          , _productions = Productions (Produce Castle) (Produce Crown) None (Produce Castle)
          , _dogmas =
            (Castle `GenIDemand` "I demand you transfer a card with a [Crown] from your hand to my score pile! If you do, draw a [1]." $
-             lift (W.tell []))
+            const $
+            lift (W.tell []))
            `DogmaChain`
            (( Castle `GenDogma` "If no cards were transferred due to this demand, draw a [1]." $
               lift (W.tell []))
@@ -202,6 +221,7 @@ feudalism =
        , _productions = Productions None (Produce Castle) (Produce Tree) (Produce Castle)
        , _dogmas = dogmasFromList
          [ Tree `IDemand` "I demand you transfer a card that provides (Castle) from you Hand to my Influence!" $
+           const $
            skip
          , Tree `Dogma` "You may splay your yellow or purple cards left." $
            skip
@@ -239,6 +259,7 @@ combustion =
        , _productions = Productions (Produce Crown) (Produce Crown) (Produce Factory) None
        , _dogmas = dogmasFromList
          [ Tree `IDemand` "I demand you transfer two cards from your Influence to my Influence!" $
+           const $
            skip
          ]
        }
@@ -293,6 +314,7 @@ databases =
        , _productions = Productions None (Produce Clock) (Produce Clock) (Produce Clock)
        , _dogmas = dogmasFromList
          [ Clock `IDemand` "I demand you recycle half your influence cards (rounded up)" $
+           const $
            skip
          ]
        }
@@ -317,6 +339,7 @@ globalization =
        , _productions = Productions None (Produce Factory) (Produce Factory) (Produce Factory)
        , _dogmas = dogmasFromList
          [ Factory `IDemand` "I demand you recycle one of your Active cards that provides (Tree)" $
+           const $
            skip
          , Factory `Dogma` "Draw and score a [6]. If there is no player with more (Tree) then (Factory), the single player with the most Influence points wins." $ do
            drawOfAnd Age6 >>= score

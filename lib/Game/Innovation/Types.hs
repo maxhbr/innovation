@@ -55,6 +55,11 @@ instance View Symbol
 symbols :: [Symbol]
 symbols = [minBound ..]
 
+class SymbolProvider a where
+  getProvidedSymbols :: a -> [Symbol]
+  providesSymbol :: a -> Symbol -> Bool
+  providesSymbol a = (`elem` getProvidedSymbols a)
+
 --------------------------------------------------------------------------------
 -- Dogmas
 --------------------------------------------------------------------------------
@@ -64,8 +69,10 @@ type WithInputAndOutput a b m = ReaderT a (WriterT b m)
 data DogmaWR a b
   = Dogma Symbol Text (Action Board)
   | GenDogma Symbol Text (WithInputAndOutput a b (ActionWR Board) ())
-  | IDemand Symbol Text (Action Board)
-  | GenIDemand Symbol Text (WithInputAndOutput a b (ActionWR Board) ())
+  | IDemand Symbol Text (UserId -- ^ user issueing the dogma
+                         -> Action Board)
+  | GenIDemand Symbol Text (UserId -- ^ user issueing the dogma
+                            -> WithInputAndOutput a b (ActionWR Board) ())
 instance Show (DogmaWR a b) where
   show (Dogma s d _)      = "[" ++ show s ++ "] " ++ T.unpack d
   show (GenDogma s d _)   = "[" ++ show s ++ "] " ++ T.unpack d
@@ -89,8 +96,8 @@ getDAction :: Monoid b =>
               DogmaWR a b -> a -> ActionWR Board b
 getDAction (Dogma _ _ act)      _ = act >> return mempty
 getDAction (GenDogma _ _ act)   a = fmap snd (W.runWriterT (R.runReaderT act a))
-getDAction (IDemand _ _ act)    _ = act >> return mempty
-getDAction (GenIDemand _ _ act) a = fmap snd (W.runWriterT (R.runReaderT act a))
+getDAction (IDemand _ _ act)    _ = A R.ask >>= act >> return mempty
+getDAction (GenIDemand _ _ act) a = A R.ask >>= (\uid -> fmap snd (W.runWriterT (R.runReaderT (act uid) a)))
 
 data DogmaChain a c
   = EDogmaChain
@@ -111,6 +118,9 @@ data Production
   = None
   | Produce { _prodSymbol :: Symbol }
   deriving (Eq,Show)
+instance SymbolProvider Production where
+  getProvidedSymbols None        = []
+  getProvidedSymbols (Produce s) = [s]
 
 isSymbolProduction :: Production -> Bool
 isSymbolProduction (Produce _) = True
@@ -128,6 +138,8 @@ data Productions
                 , _bcProd :: Production
                 , _brProd :: Production }
   deriving (Eq,Show)
+instance SymbolProvider Productions where
+  getProvidedSymbols (Productions tl bl bc br) = concatMap getProvidedSymbols [tl, bl, bc ,br]
 
 data CardId = CardId { unpackCardId :: String }
             deriving (Eq, Read)
@@ -151,6 +163,12 @@ data Card
 
 getCId :: Card -> CardId
 getCId Card{ _title=t, _age=a } = CardId ("[" ++ show a ++ ": " ++ t ++ "]")
+
+instance SymbolProvider Card where
+  getProvidedSymbols Card{_productions=productions} = getProvidedSymbols productions
+
+instance SymbolProvider [Card] where
+  getProvidedSymbols = concatMap getProvidedSymbols
 
 -- toBackside :: Card -> Card
 -- toBackside Card{ _age=a } = CardBackside a
