@@ -9,17 +9,16 @@ import qualified Control.Monad.Trans.Reader as R
 import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
 
-import           Game.MetaGame
 import           Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
 import           Game.Innovation.Rules.CoreRules ()
 
-liftToGet :: (Player -> a) -> UserId -> MoveType Board a
+liftToGet :: (Player -> a) -> UserId -> MoveType a
 liftToGet f uid = do
   player <- getPlayerById uid
   return (f player)
 
-lift2ToGet :: (b -> Player -> a) -> b -> UserId -> MoveType Board a
+lift2ToGet :: (b -> Player -> a) -> b -> UserId -> MoveType a
 lift2ToGet f b uid = do
   player <- getPlayerById uid
   return (f b player)
@@ -32,7 +31,7 @@ stackFromMapBy :: (Ord k, Stack s) =>
                      k -> Map k s -> s
 stackFromMapBy = Map.findWithDefault emptyStack
 
-getPlayerById :: UserId -> MoveType Board Player
+getPlayerById :: UserId -> MoveType Player
 getPlayerById uid = do
   players <- S.gets _players
   let playersWithId = filter (\p -> getUId p == uid) players
@@ -41,7 +40,7 @@ getPlayerById uid = do
     []  -> logError "player not found"
     _   -> logFatal "multiple players found, with the same id"
 
-getUidsWith :: (Player -> Bool) -> MoveType Board [UserId]
+getUidsWith :: (Player -> Bool) -> MoveType [UserId]
 getUidsWith t = do
   ps <- fmap (filter t) (L.use L.players)
   return (map _playerId ps)
@@ -60,10 +59,10 @@ ageOf player = let
      then maximum currentAges
      else Age1
 
-getAgeOf :: UserId -> MoveType Board Age
+getAgeOf :: UserId -> MoveType Age
 getAgeOf = fmap ageOf . getPlayerById
 
-getDrawAgeByAge :: Age -> MoveType Board (Maybe Age)
+getDrawAgeByAge :: Age -> MoveType (Maybe Age)
 getDrawAgeByAge inputAge = do
   currentDrawStacks <- S.gets _drawStacks
   let agesAboveWithCards = Map.keys $
@@ -74,23 +73,23 @@ getDrawAgeByAge inputAge = do
            then Nothing
            else Just $ head agesAboveWithCards
 
-getDrawAgeOf :: UserId -> MoveType Board (Maybe Age)
+getDrawAgeOf :: UserId -> MoveType (Maybe Age)
 getDrawAgeOf uid = getAgeOf uid >>= getDrawAgeByAge
 
-getDrawAge :: ActionType Board (Maybe Age)
+getDrawAge :: ActionType (Maybe Age)
 getDrawAge = R.ask >>= (lift . getDrawAgeOf)
 
 --------------------------------------------------------------------------------
 -- Getter for visible productions and related symbols
 --------------------------------------------------------------------------------
 
-getHandOf :: UserId -> MoveType Board Hand
+getHandOf :: UserId -> MoveType Hand
 getHandOf = liftToGet _hand
 
 playStackByColorOf :: Color -> Player -> PlayStack
 playStackByColorOf col player = stackFromMapBy col (L.view L.zone player)
 
-getPlayStackByColorOf :: Color -> UserId -> MoveType Board PlayStack
+getPlayStackByColorOf :: Color -> UserId -> MoveType PlayStack
 getPlayStackByColorOf = lift2ToGet playStackByColorOf
 
 listToFrequency :: Ord a =>
@@ -125,13 +124,13 @@ productionsForSymbolOf symb = Map.findWithDefault 0 symb . productionsOf
 productionsOf :: Player -> Map Symbol Int
 productionsOf player = Map.unionsWith (+) (map (`productionsForColorOf` player) colors)
 
-getProductionsOf :: UserId -> MoveType Board (Map Symbol Int)
+getProductionsOf :: UserId -> MoveType (Map Symbol Int)
 getProductionsOf = liftToGet productionsOf
 
-getProductionsForSymbolOf :: Symbol -> UserId -> MoveType Board Int
+getProductionsForSymbolOf :: Symbol -> UserId -> MoveType Int
 getProductionsForSymbolOf symb uid = fmap (Map.findWithDefault 0 symb) (getProductionsOf uid)
 
-modifyPlayer :: UserId -> (Player -> Player) -> MoveType Board ()
+modifyPlayer :: UserId -> (Player -> Player) -> MoveType ()
 modifyPlayer userId f = do
   playerToModify <- getPlayerById userId
   let modifiedPlayer = f playerToModify
@@ -141,11 +140,11 @@ playedColorsOf :: Player -> [Color]
 playedColorsOf Player{ _zone=ps } = [c | c <- colors
                                        , (not . isEmptyStack) (Map.findWithDefault emptyStack c ps)]
 
-getPlayedColorsOf :: UserId -> MoveType Board [Color]
+getPlayedColorsOf :: UserId -> MoveType [Color]
 getPlayedColorsOf = liftToGet playedColorsOf
 
 influenceOf :: Player -> Int
 influenceOf = sum . map ((+1) . fromEnum . _age) . getRawStack . _influence
 
-getInfluenceOf :: UserId -> MoveType Board Int
+getInfluenceOf :: UserId -> MoveType Int
 getInfluenceOf = liftToGet influenceOf

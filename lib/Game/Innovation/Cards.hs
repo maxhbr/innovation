@@ -9,12 +9,10 @@ import Data.Map (Map)
 import Control.Monad
 import qualified Data.Map as Map
 
-import Game.MetaGame
 import Game.Innovation.Types
 import Game.Innovation.Rules
 import           Control.Monad.Trans
 import qualified Control.Monad.Trans.Writer as W
-import qualified Control.Monad.Trans.Reader as R
 
 getDeck :: Map Age DrawStack
 getDeck = Map.fromList

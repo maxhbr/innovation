@@ -12,14 +12,13 @@ import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
 import qualified Control.Arrow as Arr
 
-import           Game.MetaGame
 import           Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
 import           Game.Innovation.Rules.CoreRules
 import           Game.Innovation.Rules.Helper
 
 -- | do nothing
-skip :: Action Board
+skip :: Action
 skip = mkA . const $ log "skip"
 data Skip = Skip
           deriving (Eq, Show, Read)
@@ -72,11 +71,11 @@ pushCard :: Stack a =>
             Card -> a -> a
 pushCard c = pushCards [c]
 
-drawNOfAnd :: Int -> Age -> ActionWR Board [Card]
+drawNOfAnd :: Int -> Age -> ActionWR [Card]
 drawNOfAnd n age = fmap concat (replicateM n (drawOfAnd age))
 
 -- | Try to draw an card of an specific age
-drawOfAnd :: Age -> ActionWR Board [Card]
+drawOfAnd :: Age -> ActionWR [Card]
 drawOfAnd inputAge = mkA $ \userId -> do
   drawAge <- getDrawAgeByAge inputAge
   case drawAge of
@@ -93,21 +92,21 @@ drawOfAnd inputAge = mkA $ \userId -> do
     _        -> unpackMove doEndGame
 
 -- | Try to draw an card of current age
-drawAnd :: ActionWR Board [Card]
+drawAnd :: ActionWR [Card]
 drawAnd = mkA $ \userId -> do
   playersAge <- getAgeOf userId
   userId `takes` drawOfAnd playersAge
 
-drawNAnd :: Int -> ActionWR Board [Card]
+drawNAnd :: Int -> ActionWR [Card]
 drawNAnd n = fmap concat (replicateM n drawAnd)
 
-putIntoHand :: [Card] -> Action Board
+putIntoHand :: [Card] -> Action
 putIntoHand cards = mkA $ \userId ->
   modifyPlayer userId $ L.over L.hand (onRawStack (cards ++))
 
-popTheCardsOfHand :: [CardId] -> ActionWR Board [Card]
+popTheCardsOfHand :: [CardId] -> ActionWR [Card]
 popTheCardsOfHand cids = mkA $ \uid -> let
-  popTheCardOfHand :: CardId -> MoveType Board Card
+  popTheCardOfHand :: CardId -> MoveType Card
   popTheCardOfHand cid = do
     hand <- getHandOf uid
     let (mc, newHand) = popTheCard cid hand
@@ -118,20 +117,20 @@ popTheCardsOfHand cids = mkA $ \uid -> let
       Nothing -> logError "card not in the hand"
   in mapM popTheCardOfHand cids
 
-putIntoPlay :: [Card] -> Action Board
+putIntoPlay :: [Card] -> Action
 putIntoPlay cards = mkA $ \userId -> let
-  put1IntoPlay :: Card -> MoveType Board ()
+  put1IntoPlay :: Card -> MoveType ()
   put1IntoPlay card = do
     userId `loggsAnEntry` ("put the card " <<> view card <>> " into play")
     let color = _color card
     modifyPlayer userId $ L.over L.zone (Map.adjust (pushCard card) color)
   in mapM_ put1IntoPlay cards
 
-score :: [Card] -> Action Board
+score :: [Card] -> Action
 score cards = mkA $ \userId ->
   modifyPlayer userId $ L.over L.influence (pushCards cards)
 
-putTheHandCardsIntoPlay :: [CardId] -> Action Board
+putTheHandCardsIntoPlay :: [CardId] -> Action
 putTheHandCardsIntoPlay cards = popTheCardsOfHand cards >>= putIntoPlay
 
 --------------------------------------------------------------------------------
@@ -140,7 +139,7 @@ putTheHandCardsIntoPlay cards = popTheCardsOfHand cards >>= putIntoPlay
 --------------------------------------------------------------------------------
 -- ** Domination related Actions
 
-dominateAge :: Age -> Action Board
+dominateAge :: Age -> Action
 dominateAge age = mkA $ \userId -> do
   influence <- getInfluenceOf userId
   if (influence < (5 * (fromEnum age) + 5))
@@ -157,7 +156,7 @@ dominateAge age = mkA $ \userId -> do
 --------------------------------------------------------------------------------
 -- ** Dogma related Actions
 
-getAffectedOrder :: [UserId] -> MoveType Board [UserId]
+getAffectedOrder :: [UserId] -> MoveType [UserId]
 getAffectedOrder affected = let
   getOrder = do
     ps <- fmap List.nub (S.gets _playerOrder)
@@ -168,17 +167,17 @@ getAffectedOrder affected = let
     order <- getOrder
     return (filter (`elem` affected) order)
 
-runDogmasOfCard :: Card -> Action Board
+runDogmasOfCard :: Card -> Action
 runDogmasOfCard Card { _dogmas=ds } = runDogmas ds ()
 
-runDogmas :: DogmaChain a () -> a -> Action Board
+runDogmas :: DogmaChain a () -> a -> Action
 runDogmas EDogmaChain       _ = pure ()
 runDogmas (DogmaChain d ds) a = do
   r <- runDogma d a
   runDogmas ds r
 
 runDogma :: Monoid b =>
-            DogmaWR a b -> a -> ActionWR Board b
+            DogmaWR a b -> a -> ActionWR b
 runDogma dogma a = let
   symb = getDSymbol dogma
   comperator callersNum = case dogma of
@@ -192,7 +191,7 @@ runDogma dogma a = let
     orderedAffected <- getAffectedOrder affected
     fmap mconcat (mapM (`takes` getDAction dogma a) orderedAffected)
 
-activate  :: Color -> Action Board
+activate  :: Color -> Action
 activate color = mkA $ \userId -> do
   ps <- getPlayStackByColorOf color userId
   when (isEmptyStack ps)

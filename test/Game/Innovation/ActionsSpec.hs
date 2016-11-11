@@ -16,7 +16,6 @@ import Test.Hspec.Core.Spec
 import qualified System.HsTColors as HsT
 -- import Test.Hspec.Core.Spec.Monad
 
-import Game.MetaGame
 import Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
 import Game.Innovation.ActionTokens

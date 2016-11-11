@@ -9,33 +9,16 @@ module Game.Innovation.ActionTokens
        ) where
 
 import           Prelude hiding (log)
-import           Data.Map (Map)
-import qualified Data.Map as Map
-import           Data.Text (Text)
-import qualified Data.Text as T
-import qualified Data.List as List
-import           Data.Maybe
-import           Data.Monoid
 import           Control.Monad
-import           Control.Monad.Trans.Identity
-import           Control.Monad.Trans.Class
-import           Control.Monad.Trans.Writer (WriterT)
-import qualified Control.Monad.Trans.Writer as W
-import           Control.Monad.Trans.Except (ExceptT)
-import qualified Control.Monad.Trans.Except as E
-import           Control.Monad.Trans.Reader (Reader, ReaderT)
-import qualified Control.Monad.Trans.Reader as R
-import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
 
-import           Game.MetaGame
 import           Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
 import qualified Game.Innovation.Cards as Cards
 import           Game.Innovation.Rules
 
-onlyPrepareState :: MoveType Board Bool
+onlyPrepareState :: MoveType Bool
 onlyPrepareState = do
   ms <- S.gets getMachineState'
   return (ms == Prepare)

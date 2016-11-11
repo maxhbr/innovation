@@ -19,7 +19,6 @@ module Game.MetaGame.Types.Game
        ) where
 
 import           Prelude hiding (log)
-import           Data.String
 import           Data.Monoid
 import           Data.Text (Text)
 import           Control.Monad.Trans.Writer (Writer, WriterT)
@@ -45,9 +44,6 @@ class PlayerC player where
   hasUId player uid = getUId player == uid
   hasEqualUId :: player -> player -> Bool
   hasEqualUId player1 player2 = player1 `hasUId` getUId player2
-
---------------------------------------------------------------------------------
--- ** State
 
 --------------------------------------------------------------------------------
 -- ** Moves

@@ -5,7 +5,42 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 module Game.Innovation.Types
-       where
+       ( module X
+       , Color (..), colors, mkColored
+       , Age (..), ages
+       , Symbol (..), symbols, SymbolProvider (..)
+       , Production (..), isSymbolProduction, Productions (..)
+       , DogmaWR (..), Dogma, getDSymbol, getDAction, getDDesc
+       , DogmaChain (..), dogmasFromList
+       , CardId (..), getCId, Card (..)
+       , RawStack
+       , Stack (..), isEmptyStack, onRawStack
+       , DrawStack (..)
+       , PlayStack (..), SplayState (..)
+       , Dominateables (..)
+       , Domination (..), Dominations (..), addDomination
+       , Hand (..)
+       , SpecialAchievements
+       , Player (..), mkPlayer
+       , getInfluence
+       , PlayerOrder
+       , Board (..)
+       , Seed (..), shuffleState
+
+       , InnerMoveType
+       , InnerMoveResult
+       , OuterMoveResult
+       , MoveType
+       , MoveResult
+       , MoveWR
+       , Move
+       , ActionType
+       , ActionWR
+       , Action
+       , UserInput
+       , does
+       , chooses
+       ) where
 
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -22,8 +57,21 @@ import qualified Control.Monad.Trans.Reader as R
 
 import qualified System.HsTColors as HsT
 
-import           Game.MetaGame
-
+import qualified Game.MetaGame as MG
+import           Game.MetaGame as X hiding ( InnerMoveType
+                                           , InnerMoveResult
+                                           , OuterMoveResult
+                                           , MoveType
+                                           , MoveResult
+                                           , MoveWR
+                                           , Action
+                                           , Move
+                                           , ActionType
+                                           , ActionWR
+                                           , UserInput
+                                           , chooses
+                                           , does
+                                           )
 --------------------------------------------------------------------------------
 -- Basic types
 --------------------------------------------------------------------------------
@@ -67,12 +115,12 @@ class SymbolProvider a where
 type WithInputAndOutput a b m = ReaderT a (WriterT b m)
 
 data DogmaWR a b
-  = Dogma Symbol Text (Action Board)
-  | GenDogma Symbol Text (WithInputAndOutput a b (ActionWR Board) ())
+  = Dogma Symbol Text Action
+  | GenDogma Symbol Text (WithInputAndOutput a b (MG.ActionWR Board) ())
   | IDemand Symbol Text (UserId -- ^ user issueing the dogma
-                         -> Action Board)
+                         -> Action)
   | GenIDemand Symbol Text (UserId -- ^ user issueing the dogma
-                            -> WithInputAndOutput a b (ActionWR Board) ())
+                            -> WithInputAndOutput a b (MG.ActionWR Board) ())
 instance Show (DogmaWR a b) where
   show (Dogma s d _)      = "[" ++ show s ++ "] " ++ T.unpack d
   show (GenDogma s d _)   = "[" ++ show s ++ "] " ++ T.unpack d
@@ -93,7 +141,7 @@ getDDesc (IDemand _ text _)    = text
 getDDesc (GenIDemand _ text _) = text
 
 getDAction :: Monoid b =>
-              DogmaWR a b -> a -> ActionWR Board b
+              DogmaWR a b -> a -> ActionWR b
 getDAction (Dogma _ _ act)      _ = act >> return mempty
 getDAction (GenDogma _ _ act)   a = fmap snd (W.runWriterT (R.runReaderT act a))
 getDAction (IDemand _ _ act)    _ = A R.ask >>= act >> return mempty
@@ -355,12 +403,24 @@ data Board = Board { _machineState        :: MachineState -- ^ The internal stat
                    }
              deriving (Show)
 
-does :: ActionToken Board actionToken =>
-        UserId -> actionToken -> UserInput Board
-does = does' (Proxy :: Proxy Board)
+type InnerMoveType = MG.InnerMoveType Board
+type InnerMoveResult r = MG.InnerMoveResult Board r
+type OuterMoveResult r = MG.OuterMoveResult Board r
+type MoveType = MG.MoveType Board
+type MoveResult r = MG.MoveResult Board r
+type MoveWR r = MG.MoveWR Board r
+type Move = MG.Move Board
+type ActionType = MG.ActionType Board
+type Action = MG.Action Board
+type ActionWR r = MG.ActionWR Board r
+type UserInput = MG.UserInput Board
 
-chooses :: UserId -> (UserId -> Answer) -> UserInput Board
-chooses = chooses' (Proxy :: Proxy Board)
+does :: ActionToken Board actionToken =>
+        UserId -> actionToken -> UserInput
+does = MG.does (Proxy :: Proxy Board)
+
+chooses :: UserId -> (UserId -> Answer) -> UserInput
+chooses = MG.chooses (Proxy :: Proxy Board)
 
 -- | possible answer (Yes)
 toPlayMaybe :: UserId -> Answer

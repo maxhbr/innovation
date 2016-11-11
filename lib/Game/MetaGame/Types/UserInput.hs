@@ -1,6 +1,6 @@
 module Game.MetaGame.Types.UserInput
        ( UserInput (..)
-       , does', chooses'
+       , does, chooses
        , mkG, (<=>)
        ) where
 
@@ -14,12 +14,12 @@ data UserInput board
   = UTurn (Turn board)
   | UChoice (Turn board -> Turn board)
 
-does' :: ActionToken board actionToken =>
-         Proxy board -> UserId -> actionToken -> UserInput board
-does' _ uid t = UTurn $ Turn uid t []
+does :: ActionToken board actionToken =>
+        Proxy board -> UserId -> actionToken -> UserInput board
+does _ uid t = UTurn $ Turn uid t []
 
-chooses' :: Proxy board -> UserId -> (UserId -> Answer) -> UserInput board
-chooses' _ uid c = UChoice $ \t -> t{ answers=c uid : answers t }
+chooses :: Proxy board -> UserId -> (UserId -> Answer) -> UserInput board
+chooses _ uid c = UChoice $ \t -> t{ answers=c uid : answers t }
 
 mkG :: [UserInput board] -> Game board
 mkG = G . accumulateInput id . reverse
@@ -31,4 +31,5 @@ mkG = G . accumulateInput id . reverse
 
 (<=>) :: Game board -> UserInput board -> Game board
 (G (t:ts)) <=> (UChoice f) = G $ f t : ts
+(G [])     <=> (UChoice _) = G $ [] -- TODO: this is an error
 (G ts)     <=> (UTurn t)   = G $ t : ts

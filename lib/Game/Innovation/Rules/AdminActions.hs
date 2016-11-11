@@ -10,28 +10,27 @@ import           Control.Monad
 import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
 
-import           Game.MetaGame
 import           Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
 import           Game.Innovation.Rules.Helper
 import           Game.Innovation.Rules.CoreActions
 
 
-setDeck :: Map Age DrawStack -> Move Board
+setDeck :: Map Age DrawStack -> Move
 setDeck deck = M $ S.modify (\board -> board{ _drawStacks=deck })
 
-drawDominations :: Move Board
+drawDominations :: Move
 drawDominations = M $ mapM_ (\age -> do
                                 (d,ds) <- S.gets (popCards 1 . fromJust . Map.lookup age . L.view L.drawStacks)
                                 S.modify (L.over L.dominateables (pushCards d))
                                 S.modify (L.over L.drawStacks (Map.insert age ds))) ages
 
-shuffle :: Seed -> Move Board
+shuffle :: Seed -> Move
 shuffle seed = M $ do
   logAnEntry ("Shuffle with " <<> view seed)
   S.modify (shuffleState seed)
 
-addPlayer :: String -> Move Board
+addPlayer :: String -> Move
 addPlayer playerId = M $ do
   log ("Add player: " ++ playerId)
   mstate <- S.gets _machineState
@@ -41,7 +40,7 @@ addPlayer playerId = M $ do
       S.modify (L.players L.%~ (newPlayer :))
     _       -> logError "not in prepare state."
 
-determineInitialPlayerOrder :: Move Board
+determineInitialPlayerOrder :: Move
 determineInitialPlayerOrder = let
   finalizeInitialPlayerOrder [p1,p2]       = [p1,p2,p2]
   finalizeInitialPlayerOrder [p1,p2,p3]    = [p1,p2,p2,p3,p3]
@@ -62,7 +61,7 @@ determineInitialPlayerOrder = let
     let postfix = dropWhile (\(_,c) -> c /= minimalCard) uidWithInitialCard
     L.playerOrder L..= finalizeInitialPlayerOrder (map fst (postfix ++ prefix)) -- FALSE! / TODO
 
-handOutInitialCards :: Move Board
+handOutInitialCards :: Move
 handOutInitialCards = do
   M $ do
      ps <- L.use L.players

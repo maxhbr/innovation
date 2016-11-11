@@ -12,7 +12,6 @@ import qualified Control.Monad.Trans.Except as E
 import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
 
-import           Game.MetaGame
 import           Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
 
@@ -40,7 +39,7 @@ determineWinnerByInfluence ps = let
 
 --------------------------------------------------------------------------------
 
-doEndGame :: MoveWR Board a
+doEndGame :: MoveWR a
 doEndGame = M $ do
   log "endgame"
   ps <- L.use L.players
