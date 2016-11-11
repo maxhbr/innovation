@@ -45,6 +45,10 @@ library
                      , Game.Innovation.Cards
                      , Game.Innovation.TypesLenses
                      , Game.MetaGame.Ask
+
+                     , Game.Mottainai
+                     , Game.Mottainai.Types
+                     , Game.Mottainai.Rules
   other-modules:       System.HsTColors
 
 

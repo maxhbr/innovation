@@ -4,8 +4,27 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Game.Innovation.Types
-       where
+module Game.Mottainai.Types
+       ( module X
+       , Material (..)
+       , Effect (..)
+       , Card (..)
+       , Board
+
+       , InnerMoveType
+       , InnerMoveResult
+       , OuterMoveResult
+       , MoveType
+       , MoveResult
+       , MoveWR
+       , Move
+       , ActionType
+       , ActionWR
+       , Action
+       , UserInput
+       , does
+       , chooses
+       ) where
 
 import           Data.Map (Map)
 import qualified Data.Map as Map
@@ -22,7 +41,21 @@ import qualified Control.Monad.Trans.Reader as R
 
 import qualified System.HsTColors as HsT
 
-import           Game.MetaGame
+import qualified Game.MetaGame as MG
+import           Game.MetaGame as X hiding ( InnerMoveType
+                                           , InnerMoveResult
+                                           , OuterMoveResult
+                                           , MoveType
+                                           , MoveResult
+                                           , MoveWR
+                                           , Action
+                                           , Move
+                                           , ActionType
+                                           , ActionWR
+                                           , UserInput
+                                           , chooses
+                                           , does
+                                           )
 
 --------------------------------------------------------------------------------
 -- Basic types
@@ -32,27 +65,24 @@ data Phase = Morning | Noon | Night
   deriving (Eq,Show,Read,Enum,Ord,Bounded)
 instance View Phase
 
-data Resource = Paper | Stone | Cloth | Clay | Metal
+data Material = Paper | Stone | Cloth | Clay | Metal
   deriving (Eq,Show,Read,Enum,Ord,Bounded)
-instance View Resuorce
-mkColored :: Resuorce -> String -> String
-mkColored Blue   = HsT.mkBkBlue
-mkColored Purple = HsT.mkBkMagenta
-mkColored Red    = HsT.mkBkRed . HsT.mkBlack
-mkColored Yellow = HsT.mkBkYellow . HsT.mkBlack
-mkColored Green  = HsT.mkBkGreen . HsT.mkBlack
+instance View Material
+mkColored :: Material -> String -> String
+mkColored Paper = HsT.mkBkMagenta
+mkColored Stone = HsT.mkBkGreen . HsT.mkBlack
+mkColored Cloth = HsT.mkBkYellow . HsT.mkBlack
+mkColored Clay  = HsT.mkBkRed . HsT.mkBlack
+mkColored Metal = HsT.mkBkBlue
 
-resources :: [Resource]
-resources = [minBound ..]
+materials :: [Material]
+materials = [minBound ..]
 
 data Task = Clerk | Monk | Tailor | Potter | Smith
-          | Craft Resuorce
+          | Craft Material
           | Pray
-  deriving (Eq,Show,Read,Enum,Ord,Bounded)
+  deriving (Eq,Show,Read,Ord)
 instance View Task
-
-tasks :: [Task]
-tasks = [minBound ..]
 
 data Value = One | Two | Three
   deriving (Eq,Show,Read,Enum,Ord,Bounded)
@@ -61,34 +91,35 @@ instance View Value
 values :: [Value]
 values = [minBound ..]
 
-resourceToTask :: Resource -> Task
-resourceToTask Paper = Clerk
-resourceToTask Stone = Monk
-resourceToTask Cloth = Tailor
-resourceToTask Clay  = Potter
-resourceToTask Metal = Smith
+materialToTask :: Material -> Task
+materialToTask Paper = Clerk
+materialToTask Stone = Monk
+materialToTask Cloth = Tailor
+materialToTask Clay  = Potter
+materialToTask Metal = Smith
 
-taskToResource :: Task -> Maybe Resource
-taskToResource Clerk   = Just Paper
-taskToResource Monk    = Just Stone
-taskToResource Tailor  = Just Cloth
-taskToResource Potter  = Just Clay
-taskToResource Smith   = Just Metal
-taskToResource Craft m = Just m
-taskToResource Pray    = Nothing
+taskToMaterial :: Task -> Maybe Material
+taskToMaterial Clerk     = Just Paper
+taskToMaterial Monk      = Just Stone
+taskToMaterial Tailor    = Just Cloth
+taskToMaterial Potter    = Just Clay
+taskToMaterial Smith     = Just Metal
+taskToMaterial (Craft m) = Just m
+taskToMaterial Pray      = Nothing
 
-resourceToValue :: Resource -> Value
-resourceToValue Paper = One
-resourceToValue Stone = Two
-resourceToValue Cloth = Two
-resourceToValue Clay  = Three
-resourceToValue Metal = Three
+materialToValue :: Material -> Value
+materialToValue Paper = One
+materialToValue Stone = Two
+materialToValue Cloth = Two
+materialToValue Clay  = Three
+materialToValue Metal = Three
 
 --------------------------------------------------------------------------------
 -- Effect
 --------------------------------------------------------------------------------
 
-data Effect = Effect
+data Effect = NoEffect
+            | Effect String
 
 --------------------------------------------------------------------------------
 -- Cards
@@ -103,8 +134,8 @@ instance Show Card where
   show Card{_title=title} = "["++title++"]"
 
 instance View Card where
-  view c@Card{ _color=col } = ULogE Admin (T.pack $ "A Card")
-                                          (T.pack $ mkColored col (show c))
+  view c@Card{ _material=mat } = ULogE Admin (T.pack $ "A Card")
+                                             (T.pack $ mkColored mat (show c))
 
 instance Eq Card where
   c1 == c2 = _title c1 == _title c2
@@ -169,7 +200,7 @@ instance PlayerC Player where
 
 
 instance Show Player where
-  show p@(Player uid ps inf doms hand) = "[Player: " ++ show uid ++ "]"
+  show Player{_playerId=uid} = "[Player: " ++ show uid ++ "]"
 
 instance View Player
 
@@ -179,19 +210,32 @@ instance View Player
 
 type PlayerOrder = [UserId]
 
-data Board = Board { _machineState        :: MachineState -- ^ The internal state of the underlying machine
-                   , _drawStacks          :: Map Age DrawStack -- ^ the draw stacks, one for every age. The topmost card is the head
-                   , _players             :: [Player] -- ^ the players playing in this game (in any order)
-                   , _playerOrder         :: PlayerOrder -- ^ the order, in which the players take actions
+data Board = Board { _machineState :: MachineState
+                   , _drawStack    :: DrawStack
+                   , _floor        :: RawStack
+                   , _players      :: [Player]
+                   , _playerOrder  :: PlayerOrder
                    }
              deriving (Show)
 
-does :: ActionToken Board actionToken =>
-        UserId -> actionToken -> UserInput Board
-does = does' (Proxy :: Proxy Board)
+type InnerMoveType = MG.InnerMoveType Board
+type InnerMoveResult r = MG.InnerMoveResult Board r
+type OuterMoveResult r = MG.OuterMoveResult Board r
+type MoveType = MG.MoveType Board
+type MoveResult r = MG.MoveResult Board r
+type MoveWR r = MG.MoveWR Board r
+type Move = MG.Move Board
+type ActionType = MG.ActionType Board
+type Action = MG.Action Board
+type ActionWR r = MG.ActionWR Board r
+type UserInput = MG.UserInput Board
 
-chooses :: UserId -> (UserId -> Answer) -> UserInput Board
-chooses = chooses' (Proxy :: Proxy Board)
+does :: ActionToken Board actionToken =>
+        UserId -> actionToken -> UserInput
+does = MG.does (Proxy :: Proxy Board)
+
+chooses :: UserId -> (UserId -> Answer) -> UserInput
+chooses = MG.chooses (Proxy :: Proxy Board)
 
 -- | possible answer (Yes)
 toPlayMaybe :: UserId -> Answer
@@ -206,11 +250,7 @@ notToPlayMaybe = answerNo
 --------------------------------------------------------------------------------
 
 mkPlayer :: String -> Player
-mkPlayer playerId = Player (U playerId)
-                           (Map.fromList $ zip colors $ repeat emptyStack)
-                           emptyStack
-                           (Dominations [])
-                           emptyStack
+mkPlayer playerId = undefined
 
 newtype Seed = Seed Int
              deriving (Show, Eq, Read)
@@ -220,10 +260,4 @@ instance View Seed where
 
 -- | shuffle the draw stacks and the players
 shuffleState :: Seed -> Board -> Board
-shuffleState (Seed seed) board = board{ _drawStacks=permutatedDS, _players=permutatedPlayers }
-  where
-    stdGen = mkStdGen seed
-    shuffle []    = []
-    shuffle list = shuffle' list (length list) stdGen
-    permutatedDS = Map.map (onRawStack shuffle) (_drawStacks board)
-    permutatedPlayers = shuffle $ _players board
+shuffleState (Seed seed) board = board -- TODO
