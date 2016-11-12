@@ -6,12 +6,14 @@ module Game.Innovation.Rules.CoreRules
        where
 import           Prelude hiding (log)
 import qualified Data.Map as Map
+import           Data.Proxy
 import           Control.Arrow ((&&&))
 import           Control.Monad.Trans.Class
 import qualified Control.Monad.Trans.Except as E
 import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
 
+import qualified Game.MetaGame as MG
 import           Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
 
@@ -84,3 +86,14 @@ instance BoardC Board where
     where
       doSpecialAchievements = return . id -- TODO
       determineWinner = return . id -- TODO
+
+--------------------------------------------------------------------------------
+-- Boilerplate:
+askForBool :: UserId -> String -> MoveType Bool
+askForBool = MG.askForBool (Proxy :: Proxy Board)
+chooseOneOf :: Show a =>
+               UserId -> String -> [a] -> MoveType [a]
+chooseOneOf = MG.chooseOneOf (Proxy :: Proxy Board)
+chooseNOf :: Show a =>
+             Int -> UserId -> String -> [a] -> MoveType [a]
+chooseNOf = MG.chooseNOf (Proxy :: Proxy Board)

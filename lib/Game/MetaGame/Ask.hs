@@ -4,16 +4,10 @@ module Game.MetaGame.Ask
 
 import           Data.List (nub)
 import           Data.Monoid
-import           Control.Monad
-import           Control.Monad.Identity
+import           Data.Proxy
 import           Control.Monad.Trans.Class
-import           Control.Monad.Trans.Writer (WriterT)
-import qualified Control.Monad.Trans.Writer as W
-import           Control.Monad.Trans.Except (ExceptT)
 import qualified Control.Monad.Trans.Except as E
-import           Control.Monad.Trans.State.Lazy (State, StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
-import qualified Control.Lens as L
 
 import           Game.MetaGame.Types
 import           Game.MetaGame.Helper
@@ -73,17 +67,17 @@ extractAnswers (Inquiry _ _ ios _) (Answer _ as) = map (\i -> ios !! i) as
 -- * Helper to ask things
 
 askForBool :: BoardC board =>
-              UserId -> String -> MoveType board Bool
-askForBool uid q = fmap (\case
+              Proxy board -> UserId -> String -> MoveType board Bool
+askForBool _ uid q = fmap (\case
                             [True] -> True
                             _      -> False)
                         (ask $ Inquiry uid q [True] (numMaxRestr 1))
 
 chooseOneOf :: (BoardC board, Show a) =>
-               UserId -> String -> [a] -> MoveType board [a]
-chooseOneOf = chooseNOf 1
+               Proxy board -> UserId -> String -> [a] -> MoveType board [a]
+chooseOneOf proxy = chooseNOf proxy 1
 
 chooseNOf :: (BoardC board, Show a) =>
-             Int -> UserId -> String -> [a] -> MoveType board [a]
-chooseNOf n uid q aws = ask $ Inquiry uid ("Choose " ++ show n ++ " of " ++ q) aws (uniqueRestr <> numEqRestr n)
+             Proxy board -> Int -> UserId -> String -> [a] -> MoveType board [a]
+chooseNOf _ n uid q aws = ask $ Inquiry uid ("Choose " ++ show n ++ " of " ++ q) aws (uniqueRestr <> numEqRestr n)
 -- chooseManyOf :: UserId -> _ -> MoveType board [a]

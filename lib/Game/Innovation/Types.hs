@@ -71,6 +71,9 @@ import           Game.MetaGame as X hiding ( InnerMoveType
                                            , UserInput
                                            , chooses
                                            , does
+                                           , askForBool
+                                           , chooseOneOf
+                                           , chooseNOf
                                            )
 --------------------------------------------------------------------------------
 -- Basic types
@@ -403,6 +406,8 @@ data Board = Board { _machineState        :: MachineState -- ^ The internal stat
                    }
              deriving (Show)
 
+--------------------------------------------------------------------------------
+-- Boilerplate:
 type InnerMoveType = MG.InnerMoveType Board
 type InnerMoveResult r = MG.InnerMoveResult Board r
 type OuterMoveResult r = MG.OuterMoveResult Board r

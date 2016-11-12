@@ -13,6 +13,7 @@ import qualified Control.Lens as L
 import           Game.Innovation.Types
 import qualified Game.Innovation.TypesLenses as L
 import           Game.Innovation.Rules.Helper
+import           Game.Innovation.Rules.CoreRules
 import           Game.Innovation.Rules.CoreActions
 
 

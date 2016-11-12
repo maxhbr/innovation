@@ -1,7 +1,20 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Game.MetaGame.Helper
-       where
+       ( logAnEntry, loggsAnEntry
+       , log, loggs, logggs
+       , alog, logA, loggA
+       , logWarnI, logWarn
+       , logErrorI, logError, logErrorA
+       , logFatalI, logFatal
+       , logInfoI, logInfo
+       , logTODOI, logTODO
+       , getMachineState, logMachineState
+       , Actionable (..)
+       ) where
 import           Prelude hiding (log)
 import qualified Data.Text as T
 import           Control.Monad.Trans.Class
@@ -10,9 +23,6 @@ import qualified Control.Monad.Trans.Reader as R
 import qualified Control.Monad.Trans.State.Lazy as S
 
 import Game.MetaGame.Types
-
-liftFromInner :: InnerMoveType s a -> MoveType s a
-liftFromInner = lift . lift . lift
 
 -- ** helper for logging
 
@@ -34,8 +44,7 @@ logggs uid unrestricted = liftFromInner . logggsI uid unrestricted
 alog :: String -> String -> MoveType s ()
 alog unrestricted = liftFromInner . alogI unrestricted
 
-logA :: BoardC s =>
-        String -> ActionType s ()
+logA :: String -> ActionType s ()
 logA msg = do
   uid <- R.ask
   lift (uid `loggs` msg)
@@ -83,12 +92,10 @@ logFatal :: BoardC s =>
 logFatal = liftFromInner . logFatalI
 
 -- | logInfo
-logInfoI :: BoardC s =>
-          String -> InnerMoveType s ()
+logInfoI :: String -> InnerMoveType s ()
 logInfoI info = logI $ "Info: " ++ info
 
-logInfo :: BoardC s =>
-           String -> MoveType s ()
+logInfo :: String -> MoveType s ()
 logInfo = liftFromInner . logInfoI
 
 -- | logTODO logs an unimplemented thing and throws the exception
@@ -119,44 +126,47 @@ logMachineState = getMachineState >>= (log . show)
 -- * helper related to 'Action'
 --------------------------------------------------------------------------------
 
--- ** helper for defining Actions
+class BoardC board =>
+      Actionable board a where
+  toA :: forall r.
+         a r -> ActionWR board r
 
--- liftToAType :: MoveWR board r -> ActionType board r
--- liftToAType = lift . unpackMove
+  -- | make an action which is only allowed to be taken by admin
+  -- it is by definition user independent
+  mkAdminA :: a r -> ActionWR board r
+  mkAdminA m = do
+    uid <- A R.ask
+    case uid of
+      Admin -> toA m
+      _     -> A $ logErrorA "Action was not authorized"
 
--- -- | make an action
--- mToA :: MoveWR board r -> ActionWR board r
--- mToA = A . liftToAType
+  -- | make an action from an user-dependent MoveType-thing
+  mkA :: (UserId -> a r) -> ActionWR board r
+  mkA f = do
+    uid <- A R.ask
+    toA (f uid)
 
--- | make an action which is only allowed to be taken by admin
--- it is by definition user independent
-mkAdminA :: BoardC board =>
-            MoveWR board r -> ActionWR board r
-mkAdminA t = A $ do
-  uid <- R.ask
-  case uid of
-    Admin -> (lift . unpackMove) t
-    _     -> logErrorA "Action was not authorized"
-
--- | make an action from an user-dependent MoveType-thing
-mkA :: BoardC board =>
-       (UserId -> MoveType board r) -> ActionWR board r
-mkA f = A $ do
-  uid <- R.ask
-  lift (f uid)
-
--- | create an constant action which does not depend internally on the acting user
-mkConstA :: BoardC board =>
-            MoveType board r -> ActionWR board r
-mkConstA = A . lift
-
--- | create an action which is only allowed to be taken by the currently action user
--- this might be unnecessary since 'play' does implicitly satisfy this
-mkCurPlayerA :: BoardC board =>
-                MoveType board r -> ActionWR board r
-mkCurPlayerA t = A $ do
-  uid <- R.ask
-  currentPlayer <- (lift . S.gets) getCurrentPlayer'
-  if currentPlayer == uid || uid == Admin
-    then logErrorA "not allowed to take an action"
-    else lift t
+  -- | create an action which is only allowed to be taken by the currently action user
+  -- this might be unnecessary since 'play' does implicitly satisfy this
+  mkCurPlayerA :: a r -> ActionWR board r
+  mkCurPlayerA m = do
+    uid <- A R.ask
+    currentPlayer <- A $ (lift . S.gets) getCurrentPlayer'
+    if currentPlayer == uid || uid == Admin
+      then A $ logErrorA "not allowed to take an action"
+      else toA m
+instance BoardC board =>
+         Actionable board (InnerMoveType board) where
+  toA = toA . liftFromInner
+instance BoardC board =>
+         Actionable board (MoveType board) where
+  toA = A . lift
+instance BoardC board =>
+         Actionable board (MoveWR board) where
+  toA (M mv) = toA mv
+instance BoardC board =>
+         Actionable board (ActionType board) where
+  toA = A
+instance BoardC board =>
+         Actionable board (ActionWR board) where
+  toA = id

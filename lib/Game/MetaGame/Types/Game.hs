@@ -8,7 +8,7 @@
 module Game.MetaGame.Types.Game
        ( PlayerC (..)
        , InnerMoveType, InnerMoveResult, runInnerMoveType
-       , OuterMoveResult, runOuterMoveType
+       , OuterMoveResult, liftFromInner, runOuterMoveType
        , MoveType, MoveResult, runMoveType, runMove
        , MoveWR (..), Move
        , ActionType, runActionType
@@ -21,6 +21,7 @@ module Game.MetaGame.Types.Game
 import           Prelude hiding (log)
 import           Data.Monoid
 import           Data.Text (Text)
+import           Control.Monad.Trans
 import           Control.Monad.Trans.Writer (Writer, WriterT)
 import qualified Control.Monad.Trans.Writer as W
 import           Control.Monad.Trans.Except (ExceptT)
@@ -68,6 +69,9 @@ type MoveType board
     ( StateT [Answer] -- ^ a list of answers to consume (maybe implement via ReaderT)
       ( ExceptT board -- ^ the current turn could not be finished (some user input was missing)
         ( InnerMoveType board ) ) )
+
+liftFromInner :: InnerMoveType s a -> MoveType s a
+liftFromInner = lift . lift . lift
 
 type OuterMoveResult board r
   = Either board -- ^ this is the fast way out, without ending the turn

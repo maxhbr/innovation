@@ -19,7 +19,7 @@ import           Game.Innovation.Rules.Helper
 
 -- | do nothing
 skip :: Action
-skip = mkA . const $ log "skip"
+skip = undefined -- (toA . logA) "skip"
 data Skip = Skip
           deriving (Eq, Show, Read)
 instance ActionToken Board Skip where
