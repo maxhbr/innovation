@@ -51,7 +51,7 @@ determineInitialPlayerOrder = let
     ps <- L.use L.players
     let playedCards = map (\p -> let
                               playedCard = getActiveCards p
-                              in (getUId p,playedCard)) ps
+                              in (idOf p,playedCard)) ps
     uidWithInitialCard <- mapM (\(p,cs) -> do
                                    when (length cs /= 1)
                                      (logError $ "Player " ++ show p ++ "should have played exactly one card")
@@ -68,7 +68,7 @@ handOutInitialCards = do
      ps <- L.use L.players
      Admin `loggs` "determin first cards"
      initialCards <- mapM ((\uid -> fmap (\l -> (uid,l))
-                                         (uid `takes` drawNOfAnd 2 Age1)) . getUId)
+                                         (uid `takes` drawNOfAnd 2 Age1)) . idOf)
                           ps
      Admin `loggs` "ask for first card"
      answeredQuestions <- mapM (\(uid,cs) -> fmap (\[c] -> (uid, List.partition (==c) cs))

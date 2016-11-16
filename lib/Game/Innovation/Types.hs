@@ -1,9 +1,10 @@
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 module Game.Innovation.Types
        ( module X
        , Color (..), colors, mkColored
@@ -12,7 +13,7 @@ module Game.Innovation.Types
        , Production (..), isSymbolProduction, Productions (..)
        , DogmaWR (..), Dogma, getDSymbol, getDAction, getDDesc
        , DogmaChain (..), dogmasFromList
-       , CardId (..), getCId, Card (..)
+       , CardId (..), Card (..)
        , RawStack
        , Stack (..), isEmptyStack, onRawStack
        , DrawStack (..)
@@ -211,9 +212,9 @@ data Card
          , _dogmas      :: Dogmas }
 --  | CardId String
 --  | CardBackside Age
-
-getCId :: Card -> CardId
-getCId Card{ _title=t, _age=a } = CardId ("[" ++ show a ++ ": " ++ t ++ "]")
+type instance IdF Card = CardId
+instance IdAble Card where
+  idOf Card{ _title=t, _age=a } = CardId ("[" ++ show a ++ ": " ++ t ++ "]")
 
 instance SymbolProvider Card where
   getProvidedSymbols Card{_productions=productions} = getProvidedSymbols productions
@@ -226,7 +227,7 @@ instance SymbolProvider [Card] where
 -- toBackside c              = c
 
 instance Show Card where
-  show = show . getCId
+  show = show . idOf
   -- show (CardBackside a)         = "[card of " ++ show a ++ "]"
 
 instance View Card where
@@ -235,10 +236,10 @@ instance View Card where
   -- view (CardBackside a)     = fromString ("[card of " ++ show a ++ "]")
 
 instance Eq Card where
-  c1 == c2 = getCId c1 == getCId c2
+  c1 == c2 = idOf c1 == idOf c2
 
 instance Ord Card where
-  compare c1 c2 = compare (getCId c1) (getCId c2)
+  compare c1 c2 = compare (idOf c1) (idOf c2)
 
 data SpecialAchievement
   = SpecialAchievement { _achievementTitle :: String
@@ -355,12 +356,13 @@ data Player
            , _influence   :: Influence
            , _dominations :: Dominations
            , _hand        :: Hand }
+type instance IdF Player = UserId
+instance IdAble Player where
+  idOf Player{_playerId=userId} = userId
 
 instance Eq Player where
   p1 == p2 = _playerId p1 == _playerId p2
-
-instance PlayerC Player where
-  getUId = _playerId
+instance PlayerC Player
 
 getInfluence :: Player -> Int
 getInfluence (Player _ _ (Influence is) _ _) = sum (map (fromEnum . _age) is)
@@ -379,7 +381,7 @@ instance Show Player where
        ++ " doms: " ++ numOfDominations ++ "]"
 
 instance View Player where
-  getOwner = getUId
+  getOwner = idOf
 
   -- showRestricted p@(Player uid ps inf doms hand) = undefined
 
@@ -457,6 +459,7 @@ shuffleState :: Seed -> Board -> Board
 shuffleState (Seed seed) board = board{ _drawStacks=permutatedDS, _players=permutatedPlayers }
   where
     stdGen = mkStdGen seed
+    shuffle :: [a] -> [a]
     shuffle []    = []
     shuffle list = shuffle' list (length list) stdGen
     permutatedDS = Map.map (onRawStack shuffle) (_drawStacks board)

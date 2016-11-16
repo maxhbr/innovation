@@ -9,8 +9,8 @@ import Game.Innovation.Types
 spec :: Spec
 spec = do
   describe "User" $ do
-    it "getUserId . mkPlayer = id" $
-       property $ \id -> (getUId . mkPlayer) id == (U (id :: String))
+    it "idOf . mkPlayer = id" $
+       property $ \id -> (idOf . mkPlayer) id == (U (id :: String))
 
 main :: IO ()
 main = hspec spec

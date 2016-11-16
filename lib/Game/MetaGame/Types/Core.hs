@@ -1,7 +1,11 @@
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts #-}
 module Game.MetaGame.Types.Core
-       ( UserId (..), mkUserId, isAdmin
+       ( IdF, IdAble (..)
+       , UserId (..), mkUserId, isAdmin
        , LogEntry (..), (<<>), (<>>)
        , Log, viewLog, logAnEntryI, loggsAnEntryI, logI, loggsI, logggsI, alogI
        , chownLE
@@ -17,6 +21,15 @@ import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Writer (WriterT)
 import qualified Control.Monad.Trans.Writer as W
 import qualified System.HsTColors as HsT
+
+type family IdF a
+class (Eq (IdF a)) =>
+      IdAble a where
+  idOf :: a -> IdF a
+  hasId :: a -> IdF a -> Bool
+  hasId a b = idOf a == b
+  hasEqualId :: a -> a -> Bool
+  hasEqualId a1 a2 = a1 `hasId` (idOf a2)
 
 --------------------------------------------------------------------------------
 -- ** Users and user-related stuff
@@ -39,9 +52,9 @@ mkUserId = U . sanitizeUserId
 
 -- | Guest < U * < Admin
 instance Ord UserId where
-  compare Admin Admin   = EQ
-  compare Admin (U _)   = GT
-  compare (U _) Admin   = LT
+  compare Admin  Admin  = EQ
+  compare Admin  (U _)  = GT
+  compare (U _)  Admin  = LT
   compare (U u1) (U u2) = compare u1 u2
   compare Guest  Guest  = EQ
   compare Guest  _      = LT

@@ -1,15 +1,16 @@
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeFamilies #-}
 module Game.MetaGame.Types.Game
-       ( PlayerC (..)
+       ( PlayerC
        , InnerMoveType, InnerMoveResult, runInnerMoveType
        , OuterMoveResult, liftFromInner, runOuterMoveType
-       , MoveType, MoveResult, runMoveType, runMove
+       , MoveType, MoveResult
        , MoveWR (..), Move
        , ActionType, runActionType
        , ActionWR (..), Action, takes
@@ -39,12 +40,8 @@ import           Game.MetaGame.Types.Inquiry
 -- * Basic data and type declerations
 --------------------------------------------------------------------------------
 
-class PlayerC player where
-  getUId :: player -> UserId
-  hasUId :: player -> UserId -> Bool
-  hasUId player uid = getUId player == uid
-  hasEqualUId :: player -> player -> Bool
-  hasEqualUId player1 player2 = player1 `hasUId` getUId player2
+class (IdAble player) =>
+      PlayerC player
 
 --------------------------------------------------------------------------------
 -- ** Moves
@@ -66,19 +63,15 @@ runInnerMoveType = W.runWriter . W.runWriterT . E.runExceptT
 
 type MoveType board
   = StateT board -- ^ uses StateT to handle the state of the board as 'board'
-    ( StateT [Answer] -- ^ a list of answers to consume (maybe implement via ReaderT)
-      ( ExceptT board -- ^ the current turn could not be finished (some user input was missing)
-        ( InnerMoveType board ) ) )
+    ( InquiryLayer board
+                   ( InnerMoveType board ) )
 
 liftFromInner :: InnerMoveType s a -> MoveType s a
 liftFromInner = lift . lift . lift
 
 type OuterMoveResult board r
-  = Either board -- ^ this is the fast way out, without ending the turn
-                 -- the board should be in state 'WaitForChoice' or 'GameOver'
-    ( ( r -- ^ this is the calculated result
-      , board ) -- ^ this is the state of the board at the end of the calculation
-    , [Answer] ) -- ^ this are the unconsumed answers
+  = InquiryResult board ( r -- ^ this is the calculated result
+                        , board ) -- ^ this is the state of the board at the end of the calculation
 
 type MoveResult board r = InnerMoveResult board (OuterMoveResult board r)
 
@@ -128,6 +121,7 @@ instance BoardC board =>
 --------------------------------------------------------------------------------
 -- ** Actions
 -- An action is something a player can take and it results in a move on the board
+
 type ActionType board
   = ReaderT UserId -- ^ the user doing the action (also the logging user, ...)
             ( MoveType board ) -- ^ the move behind the action

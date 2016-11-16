@@ -56,7 +56,7 @@ popCardsWith n p a = (Arr.second (setRawStack a)) (popCardsWith' n p (getRawStac
 popTheCard :: Stack a =>
               CardId -> a -> (Maybe Card, a)
 popTheCard cid a = let
-  (rs1,rs2) = List.partition (\c -> getCId c == cid) (getRawStack a) -- TODO: respects order??
+  (rs1,rs2) = List.partition (\c -> idOf c == cid) (getRawStack a) -- TODO: respects order??
   in (Arr.second (setRawStack a)) (case rs1 of
                                       [c] -> (Just c, rs2)
                                       []  -> (Nothing, rs2)

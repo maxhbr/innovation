@@ -133,7 +133,7 @@ testGame = [ emptyTGSD{ _desc = "empty game"
                       , _stateDesc = (prepareTGD . byAdmin) emptyTGD
                       , _transition = (<> mkG [ Admin `does` AddPlayer user1name
                                               , Admin `does` AddPlayer user2name ])
-                      , _persistentAsserts = \playResult -> map getUId (L.view L.players ((fromJust . extractBoard) playResult)) `shouldBe` [user2, user1]
+                      , _persistentAsserts = \playResult -> map idOf (L.view L.players ((fromJust . extractBoard) playResult)) `shouldBe` [user2, user1]
                       }
            , emptyTGSD{ _desc = "Start"
                       , _stateDesc = (waitingForChoiceTGD . byUser1) emptyTGD

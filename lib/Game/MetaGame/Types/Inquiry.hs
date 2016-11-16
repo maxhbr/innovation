@@ -1,10 +1,14 @@
 module Game.MetaGame.Types.Inquiry
        ( InqRestr (..)
        , Inquiry (..)
-       , Answer (..), answerYes, answerNo
+       , Answer (..)
+       , InquiryLayer, InquiryResult
+       , answerYes, answerNo
        ) where
 
 import Data.List
+import           Control.Monad.Trans.Except (ExceptT)
+import           Control.Monad.Trans.State.Lazy (StateT)
 
 import           Game.MetaGame.Types.Core
 
@@ -55,6 +59,14 @@ data Answer
 instance View Answer where
   getOwner (Answer ap _) = ap
   showRestricted (Answer ap _) = "[Answer by " ++ show ap ++ "]"
+
+type InquiryLayer board a = StateT [Answer] -- ^ a list of answers to consume
+                                   ( ExceptT board a ) -- ^ the current turn could not be finished (some user input was missing)
+type InquiryResult board r
+  = Either board -- ^ this is the fast way out, without ending the turn
+                 -- the board should be in state 'WaitForChoice' or 'GameOver'
+           ( r
+           , [Answer] ) -- ^ this are the unconsumed answers
 
 -- | possible answer (Yes)
 answerYes :: UserId -> Answer

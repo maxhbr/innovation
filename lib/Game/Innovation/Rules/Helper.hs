@@ -34,7 +34,7 @@ stackFromMapBy = Map.findWithDefault emptyStack
 getPlayerById :: UserId -> MoveType Player
 getPlayerById uid = do
   players <- S.gets _players
-  let playersWithId = filter (\p -> getUId p == uid) players
+  let playersWithId = filter (\p -> idOf p == uid) players
   case playersWithId of
     [p] -> return p
     []  -> logError "player not found"
@@ -134,7 +134,7 @@ modifyPlayer :: UserId -> (Player -> Player) -> MoveType ()
 modifyPlayer userId f = do
   playerToModify <- getPlayerById userId
   let modifiedPlayer = f playerToModify
-  S.modify $ \b -> b {_players = modifiedPlayer : filter (\p -> not $ p `hasUId` userId) (_players b)}
+  S.modify $ \b -> b {_players = modifiedPlayer : filter (\p -> not $ p `hasId` userId) (_players b)}
 
 playedColorsOf :: Player -> [Color]
 playedColorsOf Player{ _zone=ps } = [c | c <- colors

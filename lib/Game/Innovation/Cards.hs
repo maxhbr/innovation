@@ -31,7 +31,7 @@ getCards :: RawStack
 getCards = age1Cards ++ age2Cards ++ age3Cards ++ age4Cards ++ age5Cards ++ age6Cards ++ age7Cards ++ age8Cards ++ age9Cards ++ age10Cards
 
 getCardsById :: Map CardId Card
-getCardsById = Map.fromList $ map (\c -> (getCId c, c)) getCards
+getCardsById = Map.fromList $ map (\c -> (idOf c, c)) getCards
 
 getCardById :: CardId -> Maybe Card
 getCardById cid = Map.lookup cid getCardsById
