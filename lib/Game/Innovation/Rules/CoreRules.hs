@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TypeFamilies #-}
 module Game.Innovation.Rules.CoreRules
        where
 import           Prelude hiding (log)
@@ -54,6 +55,12 @@ doEndGame = M $ do
   S.get >>= (lift . lift . E.throwE)
 
 --------------------------------------------------------------------------------
+data BoardId = BoardId
+             deriving (Eq,Show)
+type instance IdF Board = BoardId
+instance IdAble Board where
+  idOf _ = BoardId
+
 instance BoardC Board where
   emptyBoard = Board Prepare Map.empty
                      emptyStack

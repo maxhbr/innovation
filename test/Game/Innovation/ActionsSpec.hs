@@ -107,8 +107,8 @@ runTestGame _ [] = pure ()
 runTestGame game (tg:tgs) = do
   newGame <- runTestGameStep game tg
   runTestGame newGame (map (\tg' -> tg' { _persistentAsserts=do
-                                             _persistentAsserts tg
-                                             _persistentAsserts tg'}) tgs)
+                                          _persistentAsserts tg
+                                          _persistentAsserts tg'}) tgs)
 
 seed = 1234 :: Int
 user1name = "user1":: String

@@ -1,7 +1,8 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE TypeFamilies #-}
 module Game.MetaGame.Types.Board
        ( BoardC (..)
-       , MachineState (..)
+       , MachineState (..), MachineStateId (..)
        ) where
 
 import           Data.Text (Text)
@@ -36,7 +37,14 @@ instance View MachineState where
   showRestricted (WaitForChoice inq) = "WaitForChoice: " ++ showRestricted inq
   showRestricted ms                  = show ms
 
-class BoardC board where
+data MachineStateId = MachineStateId
+                    deriving (Eq,Show)
+type instance IdF MachineState = MachineStateId
+instance IdAble MachineState where
+  idOf _ = MachineStateId
+
+class IdAble board =>
+      BoardC board where
   emptyBoard :: board
 
   -- | metainformation on the state of the board

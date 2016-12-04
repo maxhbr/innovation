@@ -1,10 +1,13 @@
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Game.MetaGame.Types.Core
        ( IdF, IdAble (..)
+       , Object (..), Objects, getObject, modifyObject
        , UserId (..), mkUserId, isAdmin
        , LogEntry (..), (<<>), (<>>)
        , Log, viewLog, logAnEntryI, loggsAnEntryI, logI, loggsI, logggsI, alogI
@@ -14,7 +17,10 @@ module Game.MetaGame.Types.Core
 
 import           Prelude hiding (log)
 import           Data.String
+import           Data.Maybe
 import           Data.Monoid
+import           Data.Proxy ()
+import           Data.Typeable (Typeable, cast, typeOf)
 import           Data.Text (Text)
 import qualified Data.Text as T
 import           Control.Monad.Trans.Class
@@ -22,17 +28,68 @@ import           Control.Monad.Trans.Writer (WriterT)
 import qualified Control.Monad.Trans.Writer as W
 import qualified System.HsTColors as HsT
 
+--------------------------------------------------------------------------------
+-- * IdAble and IdF
 type family IdF a
-class (Eq (IdF a)) =>
+class (Show (IdF a), Eq (IdF a), Typeable a) =>
       IdAble a where
   idOf :: a -> IdF a
   hasId :: a -> IdF a -> Bool
   hasId a b = idOf a == b
   hasEqualId :: a -> a -> Bool
-  hasEqualId a1 a2 = a1 `hasId` (idOf a2)
+  hasEqualId a1 a2 = a1 `hasId` idOf a2
 
 --------------------------------------------------------------------------------
--- ** Users and user-related stuff
+-- * instances
+type instance IdF (Maybe a) = Maybe (IdF a)
+instance (IdAble a) =>
+         IdAble (Maybe a) where
+  idOf (Just a) = Just (idOf a)
+  idOf Nothing  = Nothing
+
+type instance IdF (a,b) = (IdF a, IdF b)
+instance (IdAble a, IdAble b) =>
+         IdAble (a,b) where
+  idOf (a,b) = (idOf a, idOf b)
+
+--------------------------------------------------------------------------------
+-- * Object
+data Object = forall object.
+              (IdAble object, Typeable object) =>
+              Object object
+instance Show Object where
+  show (Object a) = (show . idOf) a
+instance Eq Object where
+  (Object a1) == (Object a2) = typeOf a1 == typeOf a2
+                               && a1 `hasEqualId` (fromJust . cast) a2
+
+type Objects = [Object]
+
+getObject :: IdAble a =>
+             IdF a -> Objects -> Maybe a
+getObject _ []                                         = Nothing
+getObject idA (Object a:ts) | typeMatches && idMatches = potentialResult
+                            | otherwise                = getObject idA ts
+  where
+    potentialResult = cast a
+    typeMatches     = isJust potentialResult
+    idMatches       = fromJust potentialResult `hasId` idA
+
+insertObject :: IdAble a =>
+                a -> Objects -> Objects
+insertObject a os = Object a : os
+
+modifyObject :: IdAble a =>
+                (a -> a) -> IdF a -> Objects -> Objects
+modifyObject f idA (Object a:ts) | typeMatches && idMatches = Object (f . fromJust $ potentialResult) : ts
+                                 | otherwise                = Object a : modifyObject f idA ts
+  where
+    potentialResult = cast a
+    typeMatches     = isJust potentialResult
+    idMatches       = fromJust potentialResult `hasId` idA
+
+--------------------------------------------------------------------------------
+-- * Users and user-related stuff
 
 -- | should remove:
 --   - newlines,
@@ -78,7 +135,7 @@ isAuthorizationLevel :: UserId -- ^ the asking user
 isAuthorizationLevel asker level = (asker `getCommonUID` level) == asker
 
 --------------------------------------------------------------------------------
--- ** Log
+-- * Log
 
 -- data LogLevel
 --   = INFO
