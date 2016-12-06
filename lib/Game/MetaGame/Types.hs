@@ -3,7 +3,7 @@ module Game.MetaGame.Types
        ) where
 
 
-import           Game.MetaGame.Types.Core as X
+import           Game.MetaGame.Types.Core as X hiding (getObject, setObject, modifyObject)
 import           Game.MetaGame.Types.Board as X
 import           Game.MetaGame.Types.Inquiry as X
 import           Game.MetaGame.Types.Game as X

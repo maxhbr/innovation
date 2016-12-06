@@ -7,7 +7,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Game.MetaGame.Types.Core
        ( IdF, IdAble (..)
-       , Object (..), Objects, getObject, modifyObject
+       , Object (..), World, getObject, setObject, modifyObject
        , UserId (..), mkUserId, isAdmin
        , LogEntry (..), (<<>), (<>>)
        , Log, viewLog, logAnEntryI, loggsAnEntryI, logI, loggsI, logggsI, alogI
@@ -17,6 +17,7 @@ module Game.MetaGame.Types.Core
 
 import           Prelude hiding (log)
 import           Data.String
+import           Data.Foldable
 import           Data.Maybe
 import           Data.Monoid
 import           Data.Proxy ()
@@ -34,8 +35,12 @@ type family IdF a
 class (Show (IdF a), Eq (IdF a), Typeable a) =>
       IdAble a where
   idOf :: a -> IdF a
+
   hasId :: a -> IdF a -> Bool
-  hasId a b = idOf a == b
+  hasId a idA = idOf a == idA
+  checkId :: a -> IdF a -> Maybe a
+  checkId a idA | a `hasId` idA = Just a
+                | otherwise     = Nothing
   hasEqualId :: a -> a -> Bool
   hasEqualId a1 a2 = a1 `hasId` idOf a2
 
@@ -53,40 +58,46 @@ instance (IdAble a, IdAble b) =>
   idOf (a,b) = (idOf a, idOf b)
 
 --------------------------------------------------------------------------------
--- * Object
+-- * Object and World
 data Object = forall object.
               (IdAble object, Typeable object) =>
               Object object
+packObject :: (IdAble a, Typeable a) =>
+              a -> Object
+packObject = Object
+unpackObject :: Typeable a =>
+                Object -> Maybe a
+unpackObject (Object a) = cast a
 instance Show Object where
   show (Object a) = (show . idOf) a
 instance Eq Object where
   (Object a1) == (Object a2) = typeOf a1 == typeOf a2
                                && a1 `hasEqualId` (fromJust . cast) a2
 
-type Objects = [Object]
+data World = World [Object]
 
 getObject :: IdAble a =>
-             IdF a -> Objects -> Maybe a
-getObject _ []                                         = Nothing
-getObject idA (Object a:ts) | typeMatches && idMatches = potentialResult
-                            | otherwise                = getObject idA ts
+             IdF a -> World -> Maybe a
+getObject idA (World os) = getObject' idA os
   where
-    potentialResult = cast a
-    typeMatches     = isJust potentialResult
-    idMatches       = fromJust potentialResult `hasId` idA
+    getObject' :: IdAble a =>
+                 IdF a -> [Object] -> Maybe a
+    getObject' idA = asum . map works
+      where
+        works = (>>= (`checkId` idA)) . unpackObject
 
-insertObject :: IdAble a =>
-                a -> Objects -> Objects
-insertObject a os = Object a : os
+setObject :: IdAble a =>
+                a -> World -> World
+setObject a (World os) = World (Object a : os)
 
 modifyObject :: IdAble a =>
-                (a -> a) -> IdF a -> Objects -> Objects
-modifyObject f idA (Object a:ts) | typeMatches && idMatches = Object (f . fromJust $ potentialResult) : ts
-                                 | otherwise                = Object a : modifyObject f idA ts
+                (a -> a) -> IdF a -> World -> World
+modifyObject f idA (World os) = World (map modifyMatching os)
   where
-    potentialResult = cast a
-    typeMatches     = isJust potentialResult
-    idMatches       = fromJust potentialResult `hasId` idA
+    modifyMatching x = case works x of
+      Just y  -> (packObject . f) y
+      Nothing -> x
+    works = (>>= (`checkId` idA)) . unpackObject
 
 --------------------------------------------------------------------------------
 -- * Users and user-related stuff

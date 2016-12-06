@@ -11,6 +11,7 @@ module Game.MetaGame.Types.Game
        , InnerMoveType, InnerMoveResult, runInnerMoveType
        , OuterMoveResult, liftFromInner, runOuterMoveType
        , MoveType, MoveResult
+       , getObject, setObject, modifyObject
        , MoveWR (..), Move
        , ActionType, runActionType
        , ActionWR (..), Action, takes
@@ -32,7 +33,8 @@ import qualified Control.Monad.Trans.Reader as R
 import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
 
-import           Game.MetaGame.Types.Core
+import           Game.MetaGame.Types.Core hiding (getObject, setObject, modifyObject)
+import qualified Game.MetaGame.Types.Core as Core
 import           Game.MetaGame.Types.Board
 import           Game.MetaGame.Types.Inquiry
 
@@ -61,29 +63,37 @@ type InnerMoveResult board r
 runInnerMoveType :: InnerMoveType board a -> InnerMoveResult board a
 runInnerMoveType = W.runWriter . W.runWriterT . E.runExceptT
 
+data GameState board
+  = GameState World MachineState
 type MoveType board
-  = StateT board -- ^ uses StateT to handle the state of the board as 'board'
+  = StateT (GameState board) -- ^ uses StateT to handle the state of the board end everything else
     ( InquiryLayer board
                    ( InnerMoveType board ) )
+getMachineState :: MoveType board MachineState
+getMachineState = S.gets (\(GameState _ ms) -> ms)
+getWorld :: MoveType board World
+getWorld = S.gets (\(GameState w _) -> w)
 
 liftFromInner :: InnerMoveType s a -> MoveType s a
 liftFromInner = lift . lift . lift
 
 type OuterMoveResult board r
   = InquiryResult board ( r -- ^ this is the calculated result
-                        , board ) -- ^ this is the state of the board at the end of the calculation
+                        , World ) -- ^ this is the state of the board at the end of the calculation
 
 type MoveResult board r = InnerMoveResult board (OuterMoveResult board r)
 
-runOuterMoveType :: board -> [Answer] -> MoveType board r -> InnerMoveType board (OuterMoveResult board r)
-runOuterMoveType b0 as move = E.runExceptT
-                              ( S.runStateT
-                                ( S.runStateT move b0 )
-                                as )
+runOuterMoveType :: IdAble board =>
+                    World -> [Answer] -> MoveType board r -> InnerMoveType board (OuterMoveResult board r)
+runOuterMoveType w as move = E.runExceptT
+                             ( S.runStateT
+                               ( S.runStateT move w)
+                               as )
 
 -- | Something of MoveType can be applied to an inital board state
-runMoveType :: board -> [Answer] -> MoveType board a -> MoveResult board a
-runMoveType b0 cs = runInnerMoveType . runOuterMoveType b0 cs
+runMoveType :: IdAble board =>
+               World -> [Answer] -> MoveType board a -> MoveResult board a
+runMoveType os cs = runInnerMoveType . runOuterMoveType os cs
 
 -- | The wrapper for a move
 -- a 'MoveWR' is a 'Move' which returns something
@@ -93,8 +103,9 @@ newtype MoveWR board r
 type Move board
   = MoveWR board ()
 
-runMove :: board -> [Answer] -> MoveWR board a -> MoveResult board a
-runMove b as = runMoveType b as . unpackMove
+runMove :: IdAble board =>
+           World -> [Answer] -> MoveWR board a -> MoveResult board a
+runMove os as = runMoveType os as . unpackMove
 
 instance BoardC board =>
          Monoid (Move board) where
@@ -117,6 +128,25 @@ instance BoardC board =>
          Monad (MoveWR board) where
   return t    = M $ return t
   (M t) >>= f = M $ t >>= (unpackMove . f)
+
+--------------------------------------------------------------------------------
+-- ** State helper
+
+getObject :: IdAble a =>
+        IdF a -> MoveType board a
+getObject idA = do
+  maybeA <- S.gets (Core.getObject idA)
+  case maybeA of
+    Just a -> return a
+    Nothing -> undefined -- TODO
+
+setObject :: IdAble a =>
+             a -> MoveType board ()
+setObject a = S.modify (Core.setObject a)
+
+modifyObject :: IdAble a =>
+             (a -> a) -> IdF a -> MoveType board ()
+modifyObject f idA = S.modify (Core.modifyObject f idA)
 
 --------------------------------------------------------------------------------
 -- ** Actions
@@ -166,7 +196,7 @@ class (BoardC board, View actionToken, Eq actionToken, Read actionToken, Show ac
   -- | returns, whether the board is within an state, where the turn can be applied
   stateMatchesExpectation :: actionToken -> MoveType board Bool
   stateMatchesExpectation _ = do
-    ms <- S.gets getMachineState'
+    ms <- getObject (MachineStateId :: IdF MachineState)
     return (ms == WaitForTurn)
 
 --------------------------------------------------------------------------------
