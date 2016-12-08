@@ -30,9 +30,10 @@ library
                      , Game.MetaGame.Types
                      , Game.MetaGame.Types.Core
                      , Game.MetaGame.Types.Board
-                     , Game.MetaGame.Types.Inquiry
+                     , Game.MetaGame.Types.GameState
                      , Game.MetaGame.Types.Game
                      , Game.MetaGame.Types.UserInput
+                     , Game.MetaGame.Types.GameRules
 
                      , Game.Innovation
                      , Game.Innovation.Rules.Helper

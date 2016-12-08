@@ -4,32 +4,30 @@ module Game.MetaGame.Types.UserInput
        , mkG, (<=>)
        ) where
 
-import           Data.Proxy
-
 import           Game.MetaGame.Types.Core
-import           Game.MetaGame.Types.Inquiry
+import           Game.MetaGame.Types.GameState
 import           Game.MetaGame.Types.Game
 
-data UserInput board
-  = UTurn (Turn board)
-  | UChoice (Turn board -> Turn board)
+data UserInput
+  = UTurn Turn
+  | UChoice (Turn -> Turn)
 
-does :: ActionToken board actionToken =>
-        Proxy board -> UserId -> actionToken -> UserInput board
-does _ uid t = UTurn $ Turn uid t []
+does :: ActionToken actionToken =>
+        UserId -> actionToken -> UserInput
+does uid t = UTurn $ Turn uid t []
 
-chooses :: Proxy board -> UserId -> (UserId -> Answer) -> UserInput board
-chooses _ uid c = UChoice $ \t -> t{ answers=c uid : answers t }
+chooses :: UserId -> (UserId -> Answer) -> UserInput
+chooses uid c = UChoice $ \t -> t{ answers=c uid : answers t }
 
-mkG :: [UserInput board] -> Game board
+mkG :: [UserInput] -> Game
 mkG = G . accumulateInput id . reverse
   where
-    accumulateInput :: (Turn board -> Turn board) -> [UserInput board] -> [Turn board]
+    accumulateInput :: (Turn -> Turn) -> [UserInput] -> [Turn]
     accumulateInput cs (UChoice f : uis) = accumulateInput (f . cs) uis
     accumulateInput cs (UTurn t : uis)   = cs t : accumulateInput id uis
     accumulateInput _  []                = []
 
-(<=>) :: Game board -> UserInput board -> Game board
+(<=>) :: Game -> UserInput -> Game
 (G (t:ts)) <=> (UChoice f) = G $ f t : ts
 (G [])     <=> (UChoice _) = G $ [] -- TODO: this is an error
 (G ts)     <=> (UTurn t)   = G $ t : ts

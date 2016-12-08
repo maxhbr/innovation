@@ -11,6 +11,7 @@ module Game.MetaGame.Types.Game
        , InnerMoveType, InnerMoveResult, runInnerMoveType
        , OuterMoveResult, liftFromInner, runOuterMoveType
        , MoveType, MoveResult
+       , getMachineState, setMachineState, getCurrentPlayer, setCurrentPlayer
        , getObject, setObject, modifyObject
        , MoveWR (..), Move
        , ActionType, runActionType
@@ -34,9 +35,8 @@ import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
 
 import           Game.MetaGame.Types.Core hiding (getObject, setObject, modifyObject)
-import qualified Game.MetaGame.Types.Core as Core
-import           Game.MetaGame.Types.Board
-import           Game.MetaGame.Types.Inquiry
+import           Game.MetaGame.Types.GameState hiding (getObject, setObject, modifyObject, getMachineState, setMachineState, getCurrentPlayer, setCurrentPlayer)
+import qualified Game.MetaGame.Types.GameState as GS
 
 --------------------------------------------------------------------------------
 -- * Basic data and type declerations
@@ -49,134 +49,130 @@ class (IdAble player) =>
 -- ** Moves
 -- A move is the actual change on the board
 
-type InnerMoveType board
+type InnerMoveType
   = ExceptT Text -- ^ uses ExceptT to communicate failures
     ( WriterT Log -- ^ uses WriterT to log
-      ( Writer ( Game board ) ) ) -- ^ the history of the game
+      ( Writer Game ) ) -- ^ the history of the game
 
-type InnerMoveResult board r
+type InnerMoveResult r
   = ( ( Either Text -- ^ this maybe contains the error text
         r -- ^ this is the calculated result
       , Log ) -- ^ this contains the log
-    , Game board ) -- ^ the history of the game
+    , Game ) -- ^ the history of the game
 
-runInnerMoveType :: InnerMoveType board a -> InnerMoveResult board a
+runInnerMoveType :: InnerMoveType a -> InnerMoveResult a
 runInnerMoveType = W.runWriter . W.runWriterT . E.runExceptT
 
-data GameState board
-  = GameState World MachineState
-type MoveType board
-  = StateT (GameState board) -- ^ uses StateT to handle the state of the board end everything else
-    ( InquiryLayer board
-                   ( InnerMoveType board ) )
-getMachineState :: MoveType board MachineState
-getMachineState = S.gets (\(GameState _ ms) -> ms)
-getWorld :: MoveType board World
-getWorld = S.gets (\(GameState w _) -> w)
+type MoveType
+  = StateT GameState -- ^ uses StateT to handle the state of the board end everything else
+           ( InquiryLayer InnerMoveType )
 
-liftFromInner :: InnerMoveType s a -> MoveType s a
+liftFromInner :: InnerMoveType a -> MoveType a
 liftFromInner = lift . lift . lift
 
-type OuterMoveResult board r
-  = InquiryResult board ( r -- ^ this is the calculated result
-                        , World ) -- ^ this is the state of the board at the end of the calculation
+type OuterMoveResult r
+  = InquiryResult ( r -- ^ this is the calculated result
+                  , GameState ) -- ^ this is the state of the board at the end of the calculation
 
-type MoveResult board r = InnerMoveResult board (OuterMoveResult board r)
+type MoveResult r = InnerMoveResult (OuterMoveResult r)
 
-runOuterMoveType :: IdAble board =>
-                    World -> [Answer] -> MoveType board r -> InnerMoveType board (OuterMoveResult board r)
-runOuterMoveType w as move = E.runExceptT
-                             ( S.runStateT
-                               ( S.runStateT move w)
-                               as )
+runOuterMoveType :: GameState -> [Answer] -> MoveType r -> InnerMoveType (OuterMoveResult r)
+runOuterMoveType startState as move = E.runExceptT
+                                      ( S.runStateT
+                                        ( S.runStateT move startState)
+                                        as )
 
 -- | Something of MoveType can be applied to an inital board state
-runMoveType :: IdAble board =>
-               World -> [Answer] -> MoveType board a -> MoveResult board a
-runMoveType os cs = runInnerMoveType . runOuterMoveType os cs
+runMoveType :: GameState -> [Answer] -> MoveType a -> MoveResult a
+runMoveType gameState cs = runInnerMoveType . runOuterMoveType gameState cs
 
 -- | The wrapper for a move
 -- a 'MoveWR' is a 'Move' which returns something
-newtype MoveWR board r
-  = M {unpackMove :: MoveType board r}
+newtype MoveWR r
+  = M {unpackMove :: MoveType r}
 -- | a 'Move' does not calculate anything, it just modifies the state (+ failures + log)
-type Move board
-  = MoveWR board ()
+type Move
+  = MoveWR ()
 
-runMove :: IdAble board =>
-           World -> [Answer] -> MoveWR board a -> MoveResult board a
-runMove os as = runMoveType os as . unpackMove
+runMove :: GameState -> [Answer] -> MoveWR a -> MoveResult a
+runMove gameState as = runMoveType gameState as . unpackMove
 
-instance BoardC board =>
-         Monoid (Move board) where
+instance Monoid Move where
   mempty                = M $ S.modify id -- TODO
   mappend (M t1) (M t2) = M $ t1 >> t2
 
-instance BoardC board =>
-         Functor (MoveWR board) where
+instance Functor MoveWR where
   fmap f move = move >>= (return . f)
 
-instance BoardC board =>
-         Applicative (MoveWR board) where
+instance Applicative MoveWR where
   pure r = M $ return r
   (M getF) <*> (M getX) = M $ do
     r <- getF
     x <- getX
     return $ r x
 
-instance BoardC board =>
-         Monad (MoveWR board) where
+instance Monad MoveWR where
   return t    = M $ return t
   (M t) >>= f = M $ t >>= (unpackMove . f)
 
 --------------------------------------------------------------------------------
 -- ** State helper
 
+getMachineState :: MoveType MachineState
+getMachineState = S.gets GS.getMachineState
+setMachineState :: MachineState -> MoveType ()
+setMachineState ms = S.modify (GS.setMachineState ms)
+
+getCurrentPlayer :: MoveType UserId
+getCurrentPlayer = S.gets GS.getCurrentPlayer
+setCurrentPlayer :: UserId -> MoveType ()
+setCurrentPlayer cp = S.modify (GS.setCurrentPlayer cp)
+
 getObject :: IdAble a =>
-        IdF a -> MoveType board a
+        IdF a -> MoveType a
 getObject idA = do
-  maybeA <- S.gets (Core.getObject idA)
+  maybeA <- S.gets (GS.getObject idA)
   case maybeA of
     Just a -> return a
     Nothing -> undefined -- TODO
 
 setObject :: IdAble a =>
-             a -> MoveType board ()
-setObject a = S.modify (Core.setObject a)
+             a -> MoveType ()
+setObject a = S.modify (GS.setObject a)
 
 modifyObject :: IdAble a =>
-             (a -> a) -> IdF a -> MoveType board ()
-modifyObject f idA = S.modify (Core.modifyObject f idA)
+             (a -> a) -> IdF a -> MoveType ()
+modifyObject f idA = S.modify (GS.modifyObject f idA)
 
 --------------------------------------------------------------------------------
 -- ** Actions
 -- An action is something a player can take and it results in a move on the board
 
-type ActionType board
+type ActionType
   = ReaderT UserId -- ^ the user doing the action (also the logging user, ...)
-            ( MoveType board ) -- ^ the move behind the action
+            MoveType -- ^ the move behind the action
 
-runActionType :: UserId -> ActionType board r -> MoveType board r
+runActionType :: UserId -> ActionType r -> MoveType r
 runActionType = flip R.runReaderT
 
-newtype ActionWR board r = A { unpackAction :: ActionType board r }
-type Action board = ActionWR board ()
+newtype ActionWR r = A { unpackAction :: ActionType r }
+type Action = ActionWR ()
 
-takes :: UserId -> ActionWR board r -> MoveType board r
+takes :: UserId -> ActionWR r -> MoveType r
 takes uid = runActionType uid . unpackAction
 
-instance Monoid (Action board) where
+instance Monoid Action where
   mempty                = A (return mempty)
   mappend (A a1) (A a2) = A (a1 >> a2)
 
-instance Functor (ActionWR board) where
+instance Functor ActionWR where
   fmap f action = action >>= (return . f)
 
-instance Applicative (ActionWR board) where
+instance Applicative ActionWR where
   pure r = A (return r)
   (A getF) <*> (A getX) = A (getF <*> getX)
 
-instance Monad (ActionWR board) where
+instance Monad ActionWR where
   return t    = A (return t)
   (A t) >>= f = A (t >>= (unpackAction . f))
 
@@ -188,15 +184,15 @@ instance Monad (ActionWR board) where
 -- | an actionToken is something which
 --   - has a Read and a Show instance
 --   - knows its corresponding action
-class (BoardC board, View actionToken, Eq actionToken, Read actionToken, Show actionToken) =>
-      ActionToken board actionToken where
+class (View actionToken, Eq actionToken, Read actionToken, Show actionToken) =>
+      ActionToken actionToken where
   -- | returns the action corresponding to an Token
-  getAction :: actionToken -> Action board
+  getAction :: actionToken -> Action
 
   -- | returns, whether the board is within an state, where the turn can be applied
-  stateMatchesExpectation :: actionToken -> MoveType board Bool
+  stateMatchesExpectation :: actionToken -> MoveType Bool
   stateMatchesExpectation _ = do
-    ms <- getObject (MachineStateId :: IdF MachineState)
+    ms <- getMachineState
     return (ms == WaitForTurn)
 
 --------------------------------------------------------------------------------
@@ -205,38 +201,38 @@ class (BoardC board, View actionToken, Eq actionToken, Read actionToken, Show ac
 
 -- | A turn is a action which is taken by some player
 -- TODO: Might be better called 'Action' since "one has two actions per turn"
-data Turn board
+data Turn
   = forall actionToken.
-    ActionToken board actionToken =>
+    ActionToken actionToken =>
     Turn { getActingPlayer :: UserId
          , getActionToken :: actionToken
          , answers :: [Answer] }
 
-instance Show (Turn board) where
+instance Show Turn where
   show (Turn Admin actionToken choices)      = show actionToken ++ show choices
   show (Turn (U userId) actionToken choices) = userId ++ ": " ++ show actionToken ++ show choices
   show (Turn Guest _ _)                      = error "Guest is not allowed to have an turn"
 
-instance View (Turn board) where
+instance View Turn where
   view (Turn uid actionToken choices) = chownLE uid ((view uid <>> ": ") <> view actionToken) -- <>> ("[" ++ show choices ++ "]")
 
 -- | The `Eq` instance of `Action board` is deriven from the `Show` instance
-instance Eq (Turn board) where
+instance Eq Turn where
   turn1 == turn2 = getActingPlayer turn1 == getActingPlayer turn2
                    && show turn1 == show turn2
 
 --------------------------------------------------------------------------------
 -- ** Game
 
-type History board
-  = [Turn board]
+type History
+  = [Turn]
 
 -- | A game consists of all the turns, i.e. taken actions, in chronological order
 -- the last taken action is the head
-newtype Game board
-  = G (History board)
+newtype Game
+  = G History
   deriving (Show)
 
-instance Monoid (Game board) where
+instance Monoid Game where
   mempty                = G []
   mappend (G g2) (G g1) = G $ mappend g1 g2
