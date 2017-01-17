@@ -1,6 +1,6 @@
 {-# LANGUAGE ExistentialQuantification #-}
 module Game.MetaGame.Types.GameState
-       ( MachineState (..), GameState (..)
+       ( MachineState (..), GameState (..), emptyGameState
        , getMachineState, setMachineState, getCurrentPlayer, setCurrentPlayer
        , getObject, setObject, modifyObject
        , InqRestr (..)
@@ -52,6 +52,7 @@ data GameState
     { _world         :: World
     , _machineState  :: MachineState
     , _currentPlayer :: UserId }
+emptyGameState = GameState (World []) Prepare Admin
 
 getMachineState :: GameState -> MachineState
 getMachineState = _machineState

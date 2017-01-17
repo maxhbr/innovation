@@ -7,11 +7,10 @@ import           Game.MetaGame.Types.GameState
 
 data Rules
   = Rules
-    { initilState           :: GameState
-    , getNextPlayer         :: GameState -> UserId
+    { getNextPlayer         :: GameState -> UserId
     , determineWinner       :: GameState -> UserId
-    , isGameStateConsistend :: GameState -> Bool
-    , doAtomicUpdate        :: GameState -> GameState
+    -- , isGameStateConsistend :: GameState -> Bool
+    , atomicUpdate          :: GameState -> GameState
     }
 
 advancePlayerOrder :: Rules -> GameState -> GameState

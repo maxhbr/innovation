@@ -20,7 +20,6 @@ import qualified Data.Text as T
 import           Control.Monad.Trans.Class
 import qualified Control.Monad.Trans.Except as E
 import qualified Control.Monad.Trans.Reader as R
-import qualified Control.Monad.Trans.State.Lazy as S
 
 import Game.MetaGame.Types
 

@@ -7,7 +7,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Game.MetaGame.Types.Core
        ( IdF, IdAble (..)
-       , Object (..), World, getObject, setObject, modifyObject
+       , Object (..), World (..), getObject, setObject, modifyObject
        , UserId (..), mkUserId, isAdmin
        , LogEntry (..), (<<>), (<>>)
        , Log, viewLog, logAnEntryI, loggsAnEntryI, logI, loggsI, logggsI, alogI
@@ -148,11 +148,12 @@ isAuthorizationLevel asker level = (asker `getCommonUID` level) == asker
 --------------------------------------------------------------------------------
 -- * Log
 
--- data LogLevel
---   = INFO
---   | ERROR
---   | NONE
---   deriving (Eq,Show,Enum,Ord,Bounded)
+data LogLevel
+  = INFO
+  | ERROR
+  | Fatal 
+  | NONE
+  deriving (Eq,Show,Enum,Ord,Bounded)
 
 -- | a logentry will be a line of a log
 data LogEntry
@@ -264,6 +265,13 @@ alogI :: (Monad m, MonadTrans t) =>
 alogI unrestricted = (Admin `loggsAnEntryI`)
                    . mkALogEntry unrestricted
 
+class Monad a =>
+      Logified a where
+  log :: LogLevel -> String -> a b
+-- instance (Monad m, MonadTrans t) =>
+--          Logified (t (WriterT Log m)) where
+--   log = undefined
+
 --------------------------------------------------------------------------------
 -- * The View class
 --------------------------------------------------------------------------------
@@ -277,7 +285,7 @@ class Show a =>
   showUnrestricted = show
 
   getOwner :: a -> UserId
-  getOwner _ = Guest
+  getOwner _ = Admin
 
   view :: a -> LogEntry
   view a = canonifyLE (ULogE (getOwner a)

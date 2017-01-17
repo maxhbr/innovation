@@ -6,7 +6,6 @@ module Game.MetaGame.Play
        , extractLog, extractGame
        ) where
 import           Prelude hiding (log)
-import           Data.Monoid
 import           Control.Monad
 import           Control.Monad.Trans.Class
 import qualified Control.Monad.Trans.Writer as W
@@ -76,7 +75,7 @@ type PlayResult = InnerMoveResult GameState
 -- | one is able to play a game
 play :: Rules -> Game -> PlayResult
 play rules (G history) = runInnerMoveType $
-  (foldM (runTurn rules) (initilState rules) . reverse) history
+  (foldM (runTurn rules) emptyGameState . reverse) history
 
 --------------------------------------------------------------------------------
 -- ** related helper
