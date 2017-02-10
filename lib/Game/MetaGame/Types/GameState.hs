@@ -1,8 +1,10 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE TypeFamilies #-}
 module Game.MetaGame.Types.GameState
        ( MachineState (..), GameState (..), emptyGameState
        , getMachineState, setMachineState, getCurrentPlayer, setCurrentPlayer
        , getObject, setObject, modifyObject
+       , getIdFyObject, setIdFyObject, modifyIdFyObject
        , InqRestr (..)
        , Inquiry (..)
        , Answer (..)
@@ -11,10 +13,12 @@ module Game.MetaGame.Types.GameState
        ) where
 
 import           Data.List
+import           Data.Typeable (Typeable)
 import           Control.Monad.Trans.Except (ExceptT)
 import           Control.Monad.Trans.State.Lazy (StateT)
 
-import           Game.MetaGame.Types.Core hiding (getObject, setObject, modifyObject)
+import           Game.MetaGame.Types.Core hiding ( getObject, setObject, modifyObject
+                                                 , getIdFyObject, setIdFyObject, modifyIdFyObject)
 import qualified Game.MetaGame.Types.Core as Core
 
 --------------------------------------------------------------------------------
@@ -52,6 +56,7 @@ data GameState
     { _world         :: World
     , _machineState  :: MachineState
     , _currentPlayer :: UserId }
+emptyGameState :: GameState
 emptyGameState = GameState (World []) Prepare Admin
 
 getMachineState :: GameState -> MachineState
@@ -66,7 +71,7 @@ setCurrentPlayer cp gs = gs{_currentPlayer=cp}
 
 getObject :: IdAble a =>
         IdF a -> GameState -> Maybe a
-getObject idA = (Core.getObject idA) . _world
+getObject idA = Core.getObject idA . _world
 
 setObject :: IdAble a =>
              a -> GameState -> GameState
@@ -75,6 +80,18 @@ setObject a (GameState w ms cp) = GameState (Core.setObject a w) ms cp
 modifyObject :: IdAble a =>
              (a -> a) -> IdF a -> GameState -> GameState
 modifyObject f idA (GameState w ms cp) = GameState (Core.modifyObject f idA w) ms cp
+
+getIdFyObject :: (Typeable a) =>
+                 String -> GameState -> Maybe a
+getIdFyObject k = Core.getIdFyObject k . _world
+
+setIdFyObject :: (Typeable a) =>
+                 String -> a -> GameState -> GameState
+setIdFyObject k a (GameState w ms cp) = GameState (Core.setIdFyObject k a w) ms cp
+
+modifyIdFyObject :: (Typeable a) =>
+                    (a -> a) -> String -> GameState -> GameState
+modifyIdFyObject f k (GameState w ms cp) = GameState (Core.modifyIdFyObject f k w) ms cp
 
 --------------------------------------------------------------------------------
 -- * Choices

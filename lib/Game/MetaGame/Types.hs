@@ -14,6 +14,7 @@ module Game.MetaGame.Types
        , MoveType, MoveResult
        , getMachineState, setMachineState, getCurrentPlayer, setCurrentPlayer
        , getObject, setObject, modifyObject
+       , getIdFyObject, setIdFyObject, modifyIdFyObject
        , MoveWR (..), Move
        , ActionType, runActionType
        , ActionWR (..), Action, takes
@@ -30,9 +31,9 @@ module Game.MetaGame.Types
        ) where
 
 import           Prelude hiding (log)
-import           Data.Monoid
 import           Data.Text (Text)
 import qualified Data.Text as T
+import           Data.Typeable (Typeable)
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Writer (Writer, WriterT)
 import qualified Control.Monad.Trans.Writer as W
@@ -43,8 +44,11 @@ import qualified Control.Monad.Trans.Reader as R
 import           Control.Monad.Trans.State.Lazy (StateT)
 import qualified Control.Monad.Trans.State.Lazy as S
 
-import           Game.MetaGame.Types.Core as X hiding (getObject, setObject, modifyObject)
-import           Game.MetaGame.Types.GameState as X hiding (getObject, setObject, modifyObject, getMachineState, setMachineState, getCurrentPlayer, setCurrentPlayer)
+import           Game.MetaGame.Types.Core as X hiding (getObject, setObject, modifyObject
+                                                      , getIdFyObject, setIdFyObject, modifyIdFyObject)
+import           Game.MetaGame.Types.GameState as X hiding (getObject, setObject, modifyObject
+                                                           , getIdFyObject, setIdFyObject, modifyIdFyObject
+                                                           , getMachineState, setMachineState, getCurrentPlayer, setCurrentPlayer)
 import qualified Game.MetaGame.Types.GameState as GS
 import           Game.MetaGame.Types.GameRules as X
 
@@ -179,7 +183,7 @@ getObject idA = do
   maybeA <- S.gets (GS.getObject idA)
   case maybeA of
     Just a -> return a
-    Nothing -> undefined -- TODO
+    Nothing -> logFatal ("no Object in World for key=" ++ show idA)
 
 setObject :: IdAble a =>
              a -> MoveType ()
@@ -188,6 +192,18 @@ setObject a = S.modify (GS.setObject a)
 modifyObject :: IdAble a =>
              (a -> a) -> IdF a -> MoveType ()
 modifyObject f idA = S.modify (GS.modifyObject f idA)
+
+getIdFyObject :: (Typeable a) =>
+                 String -> MoveType a
+getIdFyObject k = fmap unpackIdFy (getObject k)
+
+setIdFyObject :: (Typeable a) =>
+                 String -> a -> MoveType ()
+setIdFyObject k a = setObject (IdFy k a)
+
+modifyIdFyObject :: (Typeable a) =>
+                    (a -> a) -> String -> MoveType ()
+modifyIdFyObject f = modifyObject (\(IdFy k a) -> packIdFy k (f a))
 
 --------------------------------------------------------------------------------
 -- *** helper for logging
@@ -312,7 +328,7 @@ instance Show Turn where
   show (Turn Guest _ _)                      = error "Guest is not allowed to have an turn"
 
 instance View Turn where
-  view (Turn uid actionToken choices) = chownLE uid ((view uid <>> ": ") <> view actionToken) -- <>> ("[" ++ show choices ++ "]")
+  view (Turn uid actionToken choices) = (prefixLE uid . view) actionToken -- <>> ("[" ++ show choices ++ "]")
 
 -- | The `Eq` instance of `Action board` is deriven from the `Show` instance
 instance Eq Turn where

@@ -15,12 +15,12 @@ import           Game.Innovation.Rules.CoreRules ()
 
 liftToGet :: (Player -> a) -> UserId -> MoveType a
 liftToGet f uid = do
-  player <- getPlayerById uid
+  player <- getObject uid
   return (f player)
 
 lift2ToGet :: (b -> Player -> a) -> b -> UserId -> MoveType a
 lift2ToGet f b uid = do
-  player <- getPlayerById uid
+  player <- getObject uid
   return (f b player)
 
 --------------------------------------------------------------------------------
@@ -31,19 +31,10 @@ stackFromMapBy :: (Ord k, Stack s) =>
                      k -> Map k s -> s
 stackFromMapBy = Map.findWithDefault emptyStack
 
-getPlayerById :: UserId -> MoveType Player
-getPlayerById uid = do
-  players <- S.gets _players
-  let playersWithId = filter (\p -> idOf p == uid) players
-  case playersWithId of
-    [p] -> return p
-    []  -> logError "player not found"
-    _   -> logFatal "multiple players found, with the same id"
-
-getUidsWith :: (Player -> Bool) -> MoveType [UserId]
-getUidsWith t = do
-  ps <- fmap (filter t) (L.use L.players)
-  return (map _playerId ps)
+-- getUidsWith :: (Player -> Bool) -> MoveType [UserId]
+-- getUidsWith t = do
+--   ps <- fmap (filter t) (L.use L.players)
+--   return (map _playerId ps)
 
 --------------------------------------------------------------------------------
 -- Getter for ages
@@ -60,11 +51,16 @@ ageOf player = let
      else Age1
 
 getAgeOf :: UserId -> MoveType Age
-getAgeOf = fmap ageOf . getPlayerById
+getAgeOf = fmap ageOf . getObject
+
+getDrawStacks :: MoveType (Map Age DrawStack)
+getDrawStacks = getIdFyObject "gedDrawStacks"
+setDrawStacks :: Map Age DrawStack -> MoveType ()
+setDrawStacks = setIdFyObject "gedDrawStacks"
 
 getDrawAgeByAge :: Age -> MoveType (Maybe Age)
 getDrawAgeByAge inputAge = do
-  currentDrawStacks <- S.gets _drawStacks
+  currentDrawStacks <- getDrawStacks
   let agesAboveWithCards = Map.keys $
                            Map.filterWithKey (\ age stack -> age >= inputAge
                                                              && (not . isEmptyStack) stack)
@@ -131,10 +127,7 @@ getProductionsForSymbolOf :: Symbol -> UserId -> MoveType Int
 getProductionsForSymbolOf symb uid = fmap (Map.findWithDefault 0 symb) (getProductionsOf uid)
 
 modifyPlayer :: UserId -> (Player -> Player) -> MoveType ()
-modifyPlayer userId f = do
-  playerToModify <- getPlayerById userId
-  let modifiedPlayer = f playerToModify
-  S.modify $ \b -> b {_players = modifiedPlayer : filter (\p -> not $ p `hasId` userId) (_players b)}
+modifyPlayer userId f = modifyObject f userId
 
 playedColorsOf :: Player -> [Color]
 playedColorsOf Player{ _zone=ps } = [c | c <- colors

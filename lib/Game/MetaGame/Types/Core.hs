@@ -7,10 +7,12 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Game.MetaGame.Types.Core
        ( IdF, IdAble (..)
+       , IdFy (..), packIdFy, unpackIdFy
        , Object (..), World (..), getObject, setObject, modifyObject
+       , getIdFyObject, setIdFyObject, modifyIdFyObject
        , UserId (..), mkUserId, isAdmin
        , LogEntry (..), (<<>), (<>>)
-       , Log, viewLog, logAnEntryI, loggsAnEntryI, logI, loggsI, logggsI, alogI
+       , Log, viewLog, prefixLE, logAnEntryI, loggsAnEntryI, logI, loggsI, logggsI, alogI
        , chownLE
        , View (..)
        ) where
@@ -46,6 +48,11 @@ class (Show (IdF a), Eq (IdF a), Typeable a) =>
 
 --------------------------------------------------------------------------------
 -- * instances
+
+type instance IdF String = String
+instance IdAble String where
+  idOf = id
+
 type instance IdF (Maybe a) = Maybe (IdF a)
 instance (IdAble a) =>
          IdAble (Maybe a) where
@@ -56,6 +63,22 @@ type instance IdF (a,b) = (IdF a, IdF b)
 instance (IdAble a, IdAble b) =>
          IdAble (a,b) where
   idOf (a,b) = (idOf a, idOf b)
+
+--------------------------------------------------------------------------------
+-- ** Wrap to add id functionallity
+data IdFy a = IdFy String a
+instance Eq (IdFy a) where
+  (IdFy k1 _) == (IdFy k2 _) = k1 == k2
+
+packIdFy :: String -> a -> IdFy a
+packIdFy k a = IdFy k a
+unpackIdFy :: IdFy a -> a
+unpackIdFy (IdFy _ a) = a
+
+type instance IdF (IdFy a) = IdF String
+instance (Typeable a) =>
+         IdAble (IdFy a) where
+  idOf (IdFy k _) = idOf k
 
 --------------------------------------------------------------------------------
 -- * Object and World
@@ -82,12 +105,12 @@ getObject idA (World os) = getObject' idA os
   where
     getObject' :: IdAble a =>
                  IdF a -> [Object] -> Maybe a
-    getObject' idA = asum . map works
+    getObject' idA' = asum . map works
       where
-        works = (>>= (`checkId` idA)) . unpackObject
+        works = (>>= (`checkId` idA')) . unpackObject
 
 setObject :: IdAble a =>
-                a -> World -> World
+             a -> World -> World
 setObject a (World os) = World (Object a : os)
 
 modifyObject :: IdAble a =>
@@ -98,6 +121,20 @@ modifyObject f idA (World os) = World (map modifyMatching os)
       Just y  -> (packObject . f) y
       Nothing -> x
     works = (>>= (`checkId` idA)) . unpackObject
+
+--------------------------------------------------------------------------------
+-- ** functions for generically wrapped objects
+getIdFyObject :: (Typeable a) =>
+                 String -> World -> Maybe a
+getIdFyObject k w = fmap unpackIdFy $ getObject k w
+
+setIdFyObject :: (Typeable a) =>
+                 String -> a -> World -> World
+setIdFyObject k a w = setObject (packIdFy k a) w
+
+modifyIdFyObject :: (Typeable a) =>
+                    (a -> a) -> String -> World -> World
+modifyIdFyObject f = modifyObject (\(IdFy k a) -> packIdFy k (f a))
 
 --------------------------------------------------------------------------------
 -- * Users and user-related stuff
@@ -151,7 +188,7 @@ isAuthorizationLevel asker level = (asker `getCommonUID` level) == asker
 data LogLevel
   = INFO
   | ERROR
-  | Fatal 
+  | Fatal
   | NONE
   deriving (Eq,Show,Enum,Ord,Bounded)
 
@@ -168,13 +205,18 @@ data LogEntry
           Text -- ^ the restricted text
 
 canonifyLE :: LogEntry -> LogEntry
-canonifyLE (ULogE Admin t1 t2) = canonifyLE (ALogE t1 t2)
-canonifyLE (ULogE Guest _  t2) = CLogE t2
-canonifyLE le@(ULogE _  t1 t2) | t1 == t2  = CLogE t1
-                               | otherwise = le
-canonifyLE le@(ALogE t1 t2)    | t1 == t2  = CLogE t1
-                               | otherwise = le
-canonifyLE le@(CLogE _)        = le
+canonifyLE    (ULogE Admin t1 t2) = canonifyLE (ALogE t1 t2)
+canonifyLE    (ULogE Guest _  t2) = CLogE t2
+canonifyLE le@(ULogE _  t1 t2)    | t1 == t2  = CLogE t1
+                                  | otherwise = le
+canonifyLE le@(ALogE t1 t2)       | t1 == t2  = CLogE t1
+                                  | otherwise = le
+canonifyLE le@(CLogE _)           = le
+
+generifyLE :: LogEntry -> LogEntry
+generifyLE (ALogE t1 t2) = ULogE Admin t1 t2
+generifyLE (CLogE t1)    = ULogE Guest t1 t1
+generifyLE le            = le
 
 getRestricted, getUnrestricted :: LogEntry -> Text
 getRestricted (CLogE t)     = t
@@ -229,7 +271,11 @@ instance IsString Log where
 
 -- | helper function to get the log from the view of an user
 viewLog :: UserId -> Log -> Text
-viewLog userId log = T.unlines (map (viewLE userId) log)
+viewLog userId l = T.unlines (map (viewLE userId) l)
+
+prefixLE :: UserId -> LogEntry -> LogEntry
+prefixLE uid = chownLE uid
+             . ((view uid <>> ": ") <>)
 
 -- *** logging helper for the inner circle
 
@@ -242,8 +288,7 @@ logAnEntryI = lift
 loggsAnEntryI :: (Monad m, MonadTrans t) =>
                  UserId -> LogEntry -> t (WriterT Log m) ()
 loggsAnEntryI uid = logAnEntryI
-                  . chownLE uid
-                  . ((view uid <>> ": ") <>)
+                  . prefixLE uid
 
 logI :: (Monad m, MonadTrans t) =>
         String -> t (WriterT Log m) ()
@@ -265,13 +310,6 @@ alogI :: (Monad m, MonadTrans t) =>
 alogI unrestricted = (Admin `loggsAnEntryI`)
                    . mkALogEntry unrestricted
 
-class Monad a =>
-      Logified a where
-  log :: LogLevel -> String -> a b
--- instance (Monad m, MonadTrans t) =>
---          Logified (t (WriterT Log m)) where
---   log = undefined
-
 --------------------------------------------------------------------------------
 -- * The View class
 --------------------------------------------------------------------------------
@@ -289,8 +327,11 @@ class Show a =>
 
   view :: a -> LogEntry
   view a = canonifyLE (ULogE (getOwner a)
-                             ((T.pack . showUnrestricted) a)
-                             ((T.pack . showRestricted) a))
+                            ((T.pack . showUnrestricted) a)
+                            ((T.pack . showRestricted) a))
+
+  viewForMe :: UserId -> a -> LogEntry
+  viewForMe uid = chownLE uid . view
 
 instance View UserId where
   view (U uid) = fromString (HsT.mkUnderline uid)

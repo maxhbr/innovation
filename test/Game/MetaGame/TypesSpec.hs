@@ -35,6 +35,17 @@ spec = do
       (getObject (T1Id "id1") [Object (T1 "id2")] :: Maybe T1) `shouldBe` Nothing
     it "getObject of NonSingleton list: included" $
       (getObject (T1Id "id1") [Object (T2 "2id1"), Object (T1 "id1"), Object (T2 "2id2")] :: Maybe T1) `shouldBe` Just (T1 "id1")
+  describe "LogEntries and Log" $ let
+      logEntrys = [ ULogE Admin      "test" "test2"
+                  , ULogE Guest      "test" "test2"
+                  , ULogE (U "user") "test" "test2"
+                  , AlogE            "test" "test2"
+                  , ClogE            "test" ]
+    in do
+      it "canonifyLE . generifyLE == id" $
+        mapM_ (\le -> (canonifyLE . generifyLE) le `shouldBe` le) logEntrys
+      it "generifyLE . canonifyLE == id" $
+        mapM_ (\le -> (generifyLE . canonifyLE) le `shouldBe` le) logEntrys
 
 main :: IO ()
 main = hspec spec
