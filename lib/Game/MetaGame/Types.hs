@@ -50,7 +50,6 @@ import           Game.MetaGame.Types.GameState as X hiding (getObject, setObject
                                                            , getIdFyObject, setIdFyObject, modifyIdFyObject
                                                            , getMachineState, setMachineState, getCurrentPlayer, setCurrentPlayer)
 import qualified Game.MetaGame.Types.GameState as GS
-import           Game.MetaGame.Types.GameRules as X
 
 --------------------------------------------------------------------------------
 -- * Basic data and type declerations

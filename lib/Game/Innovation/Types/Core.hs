@@ -15,7 +15,7 @@ module Game.Innovation.Types.Core
        , DogmaChain (..), dogmasFromList
        , CardId (..), Card (..)
        , RawStack
-       , Stack (..), isEmptyStack, onRawStack
+       , Stack (..), isEmptyStack, onRawStack, removeFromStack
        , DrawStack (..)
        , PlayStack (..), SplayState (..), getSplayState
        , Dominateables (..)
@@ -33,8 +33,8 @@ import qualified Data.Map as Map
 import           Data.String
 import           Data.Text (Text)
 import qualified Data.Text as T
-import           System.Random
-import           System.Random.Shuffle (shuffle')
+-- import           System.Random
+-- import           System.Random.Shuffle (shuffle')
 import           Control.Monad.Trans.Writer (WriterT)
 import qualified Control.Monad.Trans.Writer as W
 import           Control.Monad.Trans.Reader (ReaderT)
@@ -42,7 +42,8 @@ import qualified Control.Monad.Trans.Reader as R
 
 import qualified System.HsTColors as HsT
 
-import           Game.MetaGame as X
+import           Game.MetaGame as X hiding ( getObject, setObject, modifyObject
+                                           , getIdFyObject, setIdFyObject, modifyIdFyObject )
 
 --------------------------------------------------------------------------------
 -- Basic types
@@ -262,6 +263,10 @@ getStackSize = length . getRawStack
 onRawStack :: Stack a =>
               (RawStack -> RawStack) -> a -> a
 onRawStack f a = setRawStack a (f (getRawStack a))
+
+removeFromStack :: Stack a =>
+                   Card -> a -> a
+removeFromStack c = onRawStack (filter (/= c))
 
 newtype DrawStack = DrawStack RawStack
                   deriving (Show)

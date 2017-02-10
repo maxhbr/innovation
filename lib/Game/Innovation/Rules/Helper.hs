@@ -6,7 +6,6 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Control.Monad.Trans.Class
 import qualified Control.Monad.Trans.Reader as R
-import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
 
 import           Game.Innovation.Types
@@ -15,12 +14,12 @@ import           Game.Innovation.Rules.CoreRules ()
 
 liftToGet :: (Player -> a) -> UserId -> MoveType a
 liftToGet f uid = do
-  player <- getObject uid
+  player <- getPlayer uid
   return (f player)
 
 lift2ToGet :: (b -> Player -> a) -> b -> UserId -> MoveType a
 lift2ToGet f b uid = do
-  player <- getObject uid
+  player <- getPlayer uid
   return (f b player)
 
 --------------------------------------------------------------------------------
@@ -51,12 +50,7 @@ ageOf player = let
      else Age1
 
 getAgeOf :: UserId -> MoveType Age
-getAgeOf = fmap ageOf . getObject
-
-getDrawStacks :: MoveType (Map Age DrawStack)
-getDrawStacks = getIdFyObject "gedDrawStacks"
-setDrawStacks :: Map Age DrawStack -> MoveType ()
-setDrawStacks = setIdFyObject "gedDrawStacks"
+getAgeOf = fmap ageOf . getPlayer
 
 getDrawAgeByAge :: Age -> MoveType (Maybe Age)
 getDrawAgeByAge inputAge = do
@@ -125,9 +119,6 @@ getProductionsOf = liftToGet productionsOf
 
 getProductionsForSymbolOf :: Symbol -> UserId -> MoveType Int
 getProductionsForSymbolOf symb uid = fmap (Map.findWithDefault 0 symb) (getProductionsOf uid)
-
-modifyPlayer :: UserId -> (Player -> Player) -> MoveType ()
-modifyPlayer userId f = modifyObject f userId
 
 playedColorsOf :: Player -> [Color]
 playedColorsOf Player{ _zone=ps } = [c | c <- colors

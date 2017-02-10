@@ -13,6 +13,7 @@ import qualified System.HsTColors as HsT
 
 import           Game.MetaGame.Types
 import           Game.MetaGame.Helper
+import           Game.MetaGame.GameRules
 
 unpackToken :: ActionToken actionToken =>
                actionToken -> UserId -> MoveWR ()
@@ -64,7 +65,7 @@ runTurn rules gs0@(GameState _ ms0 cp0) turn@(Turn userId actionToken choices) =
       (lift . lift . W.tell) (G [turn])
       return (if userId == Admin
               then gs1
-              else (advancePlayerOrder rules) gs1)
+              else advancePlayerOrder rules gs1)
 
 --------------------------------------------------------------------------------
 -- * play
