@@ -4,7 +4,6 @@ module Game.MetaGame.Ask
 
 import           Data.List (nub)
 import           Data.Monoid
-import           Data.Proxy
 import           Control.Monad.Trans.Class
 import qualified Control.Monad.Trans.Except as E
 import qualified Control.Monad.Trans.State.Lazy as S
@@ -30,8 +29,8 @@ numEqRestr n = InqRestr $ \cs -> length cs == n
 --------------------------------------------------------------------------------
 -- * The method to invoke an Inquiry
 
-ask :: (BoardC board, Show a) =>
-       Inquiry a -> MoveType board [a]
+ask :: Show a =>
+       Inquiry a -> MoveType [a]
 ask inq = case inquiryOptions inq of
   [] ->  do
     logInfo "empty inquiry"
@@ -40,8 +39,8 @@ ask inq = case inquiryOptions inq of
     answers <- lift S.get
     case answers of
       []     -> do
-        b <- S.gets (setMachineState' (WaitForChoice inq))
-        (lift . lift . E.throwE) b
+        setMachineState (WaitForChoice inq)
+        S.get >>= (lift . lift . E.throwE)
       (a:as) -> do
         (lift . S.put) as
         if a `matchesInquiry` inq
@@ -66,18 +65,17 @@ extractAnswers (Inquiry _ _ ios _) (Answer _ as) = map (\i -> ios !! i) as
 --------------------------------------------------------------------------------
 -- * Helper to ask things
 
-askForBool :: BoardC board =>
-              Proxy board -> UserId -> String -> MoveType board Bool
-askForBool _ uid q = fmap (\case
+askForBool :: UserId -> String -> MoveType Bool
+askForBool uid q = fmap (\case
                             [True] -> True
                             _      -> False)
                         (ask $ Inquiry uid q [True] (numMaxRestr 1))
 
-chooseOneOf :: (BoardC board, Show a) =>
-               Proxy board -> UserId -> String -> [a] -> MoveType board [a]
-chooseOneOf proxy = chooseNOf proxy 1
+chooseOneOf :: Show a =>
+               UserId -> String -> [a] -> MoveType [a]
+chooseOneOf = chooseNOf 1
 
-chooseNOf :: (BoardC board, Show a) =>
-             Proxy board -> Int -> UserId -> String -> [a] -> MoveType board [a]
-chooseNOf _ n uid q aws = ask $ Inquiry uid ("Choose " ++ show n ++ " of " ++ q) aws (uniqueRestr <> numEqRestr n)
+chooseNOf :: Show a =>
+             Int -> UserId -> String -> [a] -> MoveType [a]
+chooseNOf n uid q aws = ask $ Inquiry uid ("Choose " ++ show n ++ " of " ++ q) aws (uniqueRestr <> numEqRestr n)
 -- chooseManyOf :: UserId -> _ -> MoveType board [a]

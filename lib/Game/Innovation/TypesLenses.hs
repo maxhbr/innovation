@@ -9,4 +9,3 @@ makeLenses ''Production
 makeLenses ''Productions
 makeLenses ''Card
 makeLenses ''Player
-makeLenses ''Board

@@ -17,6 +17,7 @@ import qualified System.HsTColors as HsT
 -- import Test.Hspec.Core.Spec.Monad
 
 import Game.Innovation.Types
+import Game.Innovation.Types.InnovationState (idForUIds)
 import qualified Game.Innovation.TypesLenses as L
 import Game.Innovation.ActionTokens
 
@@ -24,7 +25,7 @@ data TestGameDesc
   = TGD { _isFailed :: Bool
         , _logContians :: Maybe String
         , _expectedState :: MachineState -> IO ()
-        , _asserts :: PlayResult Board -> IO () }
+        , _asserts :: PlayResult -> IO () }
 
 -- ** Generators
 emptyTGD = TGD False Nothing (const (pure ())) (const (pure ()))
@@ -41,43 +42,43 @@ waitingForChoiceTGD tgd = withoutWinner $ tgd { _expectedState = \case
 byAdmin tgd = tgd {_asserts=
                       (\playResult -> (do
                                           _asserts tgd playResult
-                                          (getCurrentPlayer' . fromJust . extractBoard) playResult `shouldBe` Admin))}
+                                          extractCurrentPlayer playResult `shouldBe` Admin))}
 byUser1 tgd = tgd {_asserts=
                       (\playResult -> (do
                                           _asserts tgd playResult
-                                          (getCurrentPlayer' . fromJust . extractBoard) playResult `shouldBe` user1))}
+                                          extractCurrentPlayer playResult `shouldBe` user1))}
 byUser2 tgd = tgd {_asserts=
                       (\playResult -> (do
                                           _asserts tgd playResult
-                                          (getCurrentPlayer' . fromJust . extractBoard) playResult `shouldBe` user2))}
+                                          extractCurrentPlayer playResult `shouldBe` user2))}
 
 data TestGameStepDefn
   = TGSD { _desc :: String
-         , _transition :: Game Board -> Game Board
+         , _transition :: Game -> Game
          , _stateDesc :: TestGameDesc
-         , _persistentAsserts :: PlayResult Board -> IO ()
+         , _persistentAsserts :: PlayResult -> IO ()
          }
 emptyTGSD = TGSD "" id emptyTGD (const (pure ()))
 errorTGSD = TGSD "" id errorTGD (const (pure ()))
 
 type TestGameDefn = [TestGameStepDefn]
 
-runTestGameStep :: Game Board -> TestGameStepDefn ->  SpecM (Arg (IO ())) (Game Board)
+runTestGameStep :: Game -> TestGameStepDefn ->  SpecM (Arg (IO ())) Game
 runTestGameStep game tgsd = do
   let newGame = (_transition tgsd) game
   let tgd = _stateDesc tgsd
   it (_desc tgsd ++ (if _isFailed tgd
                      then " should fail"
                      else "")) $ do
-    let playResult = play newGame
-    let stateM = extractBoard playResult
+    let playResult = play _ newGame
+    let stateM = extractGameState playResult
 
     -- print log
     (TIO.putStrLn . viewLog (if ((not . _isFailed) tgd)
-                             then ((getCurrentPlayer' . fromJust) stateM)
+                             then ((fromJust . extractWinner) playResult)
                              else Admin) . extractLog) playResult
 
-    when ((not . _isFailed) tgd)
+    unless (_isFailed tgd)
       (isJust stateM `shouldBe` True)
 
     _asserts tgd playResult
@@ -95,14 +96,14 @@ runTestGameStep game tgsd = do
                -- let resultGame = extractGame playResult
                -- show resultGame `shouldBe` show newGame
 
-               (_expectedState tgd) ((getMachineState' . fromJust) stateM))
+               (_expectedState tgd) ((fmap setMachineState) stateM))
       else (isJust stateM `shouldBe` False)
 
   return (if (_isFailed tgd)
           then game
           else newGame)
 
-runTestGame :: Game Board -> TestGameDefn -> Spec
+runTestGame :: Game -> TestGameDefn -> Spec
 runTestGame _ [] = pure ()
 runTestGame game (tg:tgs) = do
   newGame <- runTestGameStep game tg
@@ -133,7 +134,7 @@ testGame = [ emptyTGSD{ _desc = "empty game"
                       , _stateDesc = (prepareTGD . byAdmin) emptyTGD
                       , _transition = (<> mkG [ Admin `does` AddPlayer user1name
                                               , Admin `does` AddPlayer user2name ])
-                      , _persistentAsserts = \playResult -> map idOf (L.view L.players ((fromJust . extractBoard) playResult)) `shouldBe` [user2, user1]
+                      , _persistentAsserts = \playResult -> ((fmap (getIdFyObject idForUIds)) . extractGameState) playResult `shouldBe` (Just [user2, user1])
                       }
            , emptyTGSD{ _desc = "Start"
                       , _stateDesc = (waitingForChoiceTGD . byUser1) emptyTGD

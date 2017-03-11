@@ -29,10 +29,8 @@ library
                      , Game.MetaGame.Play
                      , Game.MetaGame.Types
                      , Game.MetaGame.Types.Core
-                     , Game.MetaGame.Types.Board
-                     , Game.MetaGame.Types.Inquiry
-                     , Game.MetaGame.Types.Game
-                     , Game.MetaGame.Types.UserInput
+                     , Game.MetaGame.Types.GameState
+                     , Game.MetaGame.GameRules
 
                      , Game.Innovation
                      , Game.Innovation.Rules.Helper
@@ -41,6 +39,9 @@ library
                      , Game.Innovation.Rules.CoreActions
                      , Game.Innovation.ActionTokens
                      , Game.Innovation.Types
+                     , Game.Innovation.Types.Core
+                     , Game.Innovation.Types.InnovationState
+                     , Game.Innovation.Types.StackHelper
                      , Game.Innovation.Rules
                      , Game.Innovation.Cards
                      , Game.Innovation.TypesLenses

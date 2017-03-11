@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -7,11 +6,13 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Game.MetaGame.Types.Core
        ( IdF, IdAble (..)
-       , Object (..), World, getObject, setObject, modifyObject
+       , IdFy (..), unpackIdFy
+       , Object (..), World (..), getObject, setObject, modifyObject
+       , getIdFyObject, setIdFyObject, modifyIdFyObject
        , UserId (..), mkUserId, isAdmin
        , LogEntry (..), (<<>), (<>>)
-       , Log, viewLog, logAnEntryI, loggsAnEntryI, logI, loggsI, logggsI, alogI
-       , chownLE
+       , Log, viewLog, prefixLE, logAnEntryI, loggsAnEntryI, logI, loggsI, logggsI, alogI
+       , chownLE, canonifyLE, generifyLE, getRestricted, getUnrestricted
        , View (..)
        ) where
 
@@ -27,6 +28,7 @@ import qualified Data.Text as T
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Writer (WriterT)
 import qualified Control.Monad.Trans.Writer as W
+import           Control.Applicative
 import qualified System.HsTColors as HsT
 
 --------------------------------------------------------------------------------
@@ -46,6 +48,11 @@ class (Show (IdF a), Eq (IdF a), Typeable a) =>
 
 --------------------------------------------------------------------------------
 -- * instances
+
+type instance IdF String = String
+instance IdAble String where
+  idOf = id
+
 type instance IdF (Maybe a) = Maybe (IdF a)
 instance (IdAble a) =>
          IdAble (Maybe a) where
@@ -56,6 +63,20 @@ type instance IdF (a,b) = (IdF a, IdF b)
 instance (IdAble a, IdAble b) =>
          IdAble (a,b) where
   idOf (a,b) = (idOf a, idOf b)
+
+--------------------------------------------------------------------------------
+-- ** Wrap to add id functionallity
+data IdFy a = IdFy String a
+instance Eq (IdFy a) where
+  (IdFy k1 _) == (IdFy k2 _) = k1 == k2
+
+unpackIdFy :: IdFy a -> a
+unpackIdFy (IdFy _ a) = a
+
+type instance IdF (IdFy a) = IdF String
+instance (Typeable a) =>
+         IdAble (IdFy a) where
+  idOf (IdFy k _) = idOf k
 
 --------------------------------------------------------------------------------
 -- * Object and World
@@ -74,7 +95,7 @@ instance Eq Object where
   (Object a1) == (Object a2) = typeOf a1 == typeOf a2
                                && a1 `hasEqualId` (fromJust . cast) a2
 
-data World = World [Object]
+newtype World = World [Object]
 
 getObject :: IdAble a =>
              IdF a -> World -> Maybe a
@@ -82,12 +103,12 @@ getObject idA (World os) = getObject' idA os
   where
     getObject' :: IdAble a =>
                  IdF a -> [Object] -> Maybe a
-    getObject' idA = asum . map works
+    getObject' idA' = asum . map works
       where
-        works = (>>= (`checkId` idA)) . unpackObject
+        works = (>>= (`checkId` idA')) . unpackObject
 
 setObject :: IdAble a =>
-                a -> World -> World
+             a -> World -> World
 setObject a (World os) = World (Object a : os)
 
 modifyObject :: IdAble a =>
@@ -98,6 +119,20 @@ modifyObject f idA (World os) = World (map modifyMatching os)
       Just y  -> (packObject . f) y
       Nothing -> x
     works = (>>= (`checkId` idA)) . unpackObject
+
+--------------------------------------------------------------------------------
+-- ** functions for generically wrapped objects
+getIdFyObject :: (Typeable a) =>
+                 String -> World -> Maybe a
+getIdFyObject k w = unpackIdFy <$> getObject k w
+
+setIdFyObject :: (Typeable a) =>
+                 String -> a -> World -> World
+setIdFyObject k a = setObject (IdFy k a)
+
+modifyIdFyObject :: (Typeable a) =>
+                    (a -> a) -> String -> World -> World
+modifyIdFyObject f = modifyObject (\(IdFy k a) -> IdFy k (f a))
 
 --------------------------------------------------------------------------------
 -- * Users and user-related stuff
@@ -148,11 +183,12 @@ isAuthorizationLevel asker level = (asker `getCommonUID` level) == asker
 --------------------------------------------------------------------------------
 -- * Log
 
--- data LogLevel
---   = INFO
---   | ERROR
---   | NONE
---   deriving (Eq,Show,Enum,Ord,Bounded)
+data LogLevel
+  = INFO
+  | ERROR
+  | Fatal
+  | NONE
+  deriving (Eq,Show,Enum,Ord,Bounded)
 
 -- | a logentry will be a line of a log
 data LogEntry
@@ -167,13 +203,18 @@ data LogEntry
           Text -- ^ the restricted text
 
 canonifyLE :: LogEntry -> LogEntry
-canonifyLE (ULogE Admin t1 t2) = canonifyLE (ALogE t1 t2)
-canonifyLE (ULogE Guest _  t2) = CLogE t2
-canonifyLE le@(ULogE _  t1 t2) | t1 == t2  = CLogE t1
-                               | otherwise = le
-canonifyLE le@(ALogE t1 t2)    | t1 == t2  = CLogE t1
-                               | otherwise = le
-canonifyLE le@(CLogE _)        = le
+canonifyLE    (ULogE Admin t1 t2) = canonifyLE (ALogE t1 t2)
+canonifyLE    (ULogE Guest _  t2) = CLogE t2
+canonifyLE le@(ULogE _  t1 t2)    | t1 == t2  = CLogE t1
+                                  | otherwise = le
+canonifyLE le@(ALogE t1 t2)       | t1 == t2  = CLogE t1
+                                  | otherwise = le
+canonifyLE le@(CLogE _)           = le
+
+generifyLE :: LogEntry -> LogEntry
+generifyLE (ALogE t1 t2) = ULogE Admin t1 t2
+generifyLE (CLogE t1)    = ULogE Guest t1 t1
+generifyLE le            = le
 
 getRestricted, getUnrestricted :: LogEntry -> Text
 getRestricted (CLogE t)     = t
@@ -228,7 +269,11 @@ instance IsString Log where
 
 -- | helper function to get the log from the view of an user
 viewLog :: UserId -> Log -> Text
-viewLog userId log = T.unlines (map (viewLE userId) log)
+viewLog userId l = T.unlines (map (viewLE userId) l)
+
+prefixLE :: UserId -> LogEntry -> LogEntry
+prefixLE uid = chownLE uid
+             . ((view uid <>> ": ") <>)
 
 -- *** logging helper for the inner circle
 
@@ -241,8 +286,7 @@ logAnEntryI = lift
 loggsAnEntryI :: (Monad m, MonadTrans t) =>
                  UserId -> LogEntry -> t (WriterT Log m) ()
 loggsAnEntryI uid = logAnEntryI
-                  . chownLE uid
-                  . ((view uid <>> ": ") <>)
+                  . prefixLE uid
 
 logI :: (Monad m, MonadTrans t) =>
         String -> t (WriterT Log m) ()
@@ -277,12 +321,15 @@ class Show a =>
   showUnrestricted = show
 
   getOwner :: a -> UserId
-  getOwner _ = Guest
+  getOwner _ = Admin
 
   view :: a -> LogEntry
   view a = canonifyLE (ULogE (getOwner a)
-                             ((T.pack . showUnrestricted) a)
-                             ((T.pack . showRestricted) a))
+                            ((T.pack . showUnrestricted) a)
+                            ((T.pack . showRestricted) a))
+
+  viewForMe :: UserId -> a -> LogEntry
+  viewForMe uid = chownLE uid . view
 
 instance View UserId where
   view (U uid) = fromString (HsT.mkUnderline uid)
