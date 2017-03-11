@@ -2,14 +2,13 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 module Game.MetaGame.Types
        ( PlayerC
        -- | move types
-       , InnerMoveType, InnerMoveResult, runInnerMoveType
+       , InnerMoveType, InnerMoveResult, runInnerMoveType, unpackInnerMoveResult
        , OuterMoveResult, liftFromInner, runOuterMoveType
        , MoveType, MoveResult
        , getMachineState, setMachineState, getCurrentPlayer, setCurrentPlayer
@@ -52,7 +51,7 @@ import           Game.MetaGame.Types.GameState as X hiding (getObject, setObject
 import qualified Game.MetaGame.Types.GameState as GS
 
 --------------------------------------------------------------------------------
--- * Basic data and type declerations
+-- * Basic data and type declarations
 
 class (IdAble player) =>
       PlayerC player
@@ -72,6 +71,10 @@ type InnerMoveResult r
         r -- ^ this is the calculated result
       , Log ) -- ^ this contains the log
     , Game ) -- ^ the history of the game
+
+unpackInnerMoveResult :: InnerMoveResult r -> Maybe r
+unpackInnerMoveResult ((Right r, _), _) = Just r
+unpackInnerMoveResult _                = Nothing
 
 runInnerMoveType :: InnerMoveType a -> InnerMoveResult a
 runInnerMoveType = W.runWriter . W.runWriterT . E.runExceptT
@@ -202,7 +205,7 @@ setIdFyObject k a = setObject (IdFy k a)
 
 modifyIdFyObject :: (Typeable a) =>
                     (a -> a) -> String -> MoveType ()
-modifyIdFyObject f = modifyObject (\(IdFy k a) -> packIdFy k (f a))
+modifyIdFyObject f = modifyObject (\(IdFy k a) -> IdFy k (f a))
 
 --------------------------------------------------------------------------------
 -- *** helper for logging

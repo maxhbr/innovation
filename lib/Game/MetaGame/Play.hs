@@ -3,7 +3,7 @@ module Game.MetaGame.Play
          -- play
        , play
          -- helper functions
-       , extractLog, extractGame
+       , extractLog, extractGame, extractGameState, extractWinner, extractCurrentPlayer
        ) where
 import           Prelude hiding (log)
 import           Control.Monad
@@ -14,6 +14,7 @@ import qualified System.HsTColors as HsT
 import           Game.MetaGame.Types
 import           Game.MetaGame.Helper
 import           Game.MetaGame.GameRules
+import qualified Game.MetaGame.Types.GameState as GS
 
 unpackToken :: ActionToken actionToken =>
                actionToken -> UserId -> MoveWR ()
@@ -87,11 +88,15 @@ extractLog ((_,l),_) = l
 extractGame :: PlayResult -> Game
 extractGame (_, g) = g
 
--- extractBoard :: PlayResult -> Maybe board
--- extractBoard ((Right board,_),_) = Just board
--- extractBoard _                   = Nothing
+extractGameState :: PlayResult -> Maybe GameState
+extractGameState ((gsOrT,_),_) = case gsOrT of
+  Right gs -> Just gs
+  _        -> Nothing
 
--- extractWinner :: PlayResult -> Maybe UserId
--- extractWinner r = case extractBoard r of
---   Just b -> getWinner b
---   _      -> Nothing
+extractWinner :: PlayResult -> Maybe UserId
+extractWinner pr = case unpackInnerMoveResult pr of
+  Just GameState { _machineState = GameOver winner} -> Just winner
+  _                                                 -> Nothing
+
+extractCurrentPlayer :: PlayResult -> Maybe UserId
+extractCurrentPlayer = (fmap GS.getCurrentPlayer) . extractGameState

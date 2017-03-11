@@ -1,4 +1,3 @@
-{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -7,13 +6,13 @@
 {-# LANGUAGE UndecidableInstances #-}
 module Game.MetaGame.Types.Core
        ( IdF, IdAble (..)
-       , IdFy (..), packIdFy, unpackIdFy
+       , IdFy (..), unpackIdFy
        , Object (..), World (..), getObject, setObject, modifyObject
        , getIdFyObject, setIdFyObject, modifyIdFyObject
        , UserId (..), mkUserId, isAdmin
        , LogEntry (..), (<<>), (<>>)
        , Log, viewLog, prefixLE, logAnEntryI, loggsAnEntryI, logI, loggsI, logggsI, alogI
-       , chownLE
+       , chownLE, canonifyLE, generifyLE, getRestricted, getUnrestricted
        , View (..)
        ) where
 
@@ -29,6 +28,7 @@ import qualified Data.Text as T
 import           Control.Monad.Trans.Class
 import           Control.Monad.Trans.Writer (WriterT)
 import qualified Control.Monad.Trans.Writer as W
+import           Control.Applicative
 import qualified System.HsTColors as HsT
 
 --------------------------------------------------------------------------------
@@ -70,8 +70,6 @@ data IdFy a = IdFy String a
 instance Eq (IdFy a) where
   (IdFy k1 _) == (IdFy k2 _) = k1 == k2
 
-packIdFy :: String -> a -> IdFy a
-packIdFy k a = IdFy k a
 unpackIdFy :: IdFy a -> a
 unpackIdFy (IdFy _ a) = a
 
@@ -97,7 +95,7 @@ instance Eq Object where
   (Object a1) == (Object a2) = typeOf a1 == typeOf a2
                                && a1 `hasEqualId` (fromJust . cast) a2
 
-data World = World [Object]
+newtype World = World [Object]
 
 getObject :: IdAble a =>
              IdF a -> World -> Maybe a
@@ -126,15 +124,15 @@ modifyObject f idA (World os) = World (map modifyMatching os)
 -- ** functions for generically wrapped objects
 getIdFyObject :: (Typeable a) =>
                  String -> World -> Maybe a
-getIdFyObject k w = fmap unpackIdFy $ getObject k w
+getIdFyObject k w = unpackIdFy <$> getObject k w
 
 setIdFyObject :: (Typeable a) =>
                  String -> a -> World -> World
-setIdFyObject k a w = setObject (packIdFy k a) w
+setIdFyObject k a = setObject (IdFy k a)
 
 modifyIdFyObject :: (Typeable a) =>
                     (a -> a) -> String -> World -> World
-modifyIdFyObject f = modifyObject (\(IdFy k a) -> packIdFy k (f a))
+modifyIdFyObject f = modifyObject (\(IdFy k a) -> IdFy k (f a))
 
 --------------------------------------------------------------------------------
 -- * Users and user-related stuff
