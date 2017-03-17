@@ -25,27 +25,27 @@ library
                      , random, random-shuffle
                      , lens
   exposed-modules:     Game.MetaGame
-                     , Game.MetaGame.Helper
-                     , Game.MetaGame.Play
-                     , Game.MetaGame.Types
-                     , Game.MetaGame.Types.Core
-                     , Game.MetaGame.Types.GameState
-                     , Game.MetaGame.GameRules
+  --                    , Game.MetaGame.Helper
+  --                    , Game.MetaGame.Play
+  --                    , Game.MetaGame.Types
+  --                    , Game.MetaGame.Types.Core
+  --                    , Game.MetaGame.Types.GameState
+  --                    , Game.MetaGame.GameRules
 
-                     , Game.Innovation
-                     , Game.Innovation.Rules.Helper
-                     , Game.Innovation.Rules.CoreRules
-                     , Game.Innovation.Rules.AdminActions
-                     , Game.Innovation.Rules.CoreActions
-                     , Game.Innovation.ActionTokens
-                     , Game.Innovation.Types
-                     , Game.Innovation.Types.Core
-                     , Game.Innovation.Types.InnovationState
-                     , Game.Innovation.Types.StackHelper
-                     , Game.Innovation.Rules
-                     , Game.Innovation.Cards
-                     , Game.Innovation.TypesLenses
-                     , Game.MetaGame.Ask
+  --                    , Game.Innovation
+  --                    , Game.Innovation.Rules.Helper
+  --                    , Game.Innovation.Rules.CoreRules
+  --                    , Game.Innovation.Rules.AdminActions
+  --                    , Game.Innovation.Rules.CoreActions
+  --                    , Game.Innovation.ActionTokens
+  --                    , Game.Innovation.Types
+  --                    , Game.Innovation.Types.Core
+  --                    , Game.Innovation.Types.InnovationState
+  --                    , Game.Innovation.Types.StackHelper
+  --                    , Game.Innovation.Rules
+  --                    , Game.Innovation.Cards
+  --                    , Game.Innovation.TypesLenses
+  --                    , Game.MetaGame.Ask
   other-modules:       System.HsTColors
 
 
