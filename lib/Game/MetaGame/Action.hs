@@ -31,3 +31,18 @@ instance Monad Action where
   (A t) >>= f = A (t >>= (unpackAction . f))
 
 -- ** ActionToken
+-- ActionTokens are used to identify actions
+
+-- | an actionToken is something which
+--   - has a Read and a Show instance
+--   - knows its corresponding action
+class (View actionToken, Eq actionToken, Read actionToken, Show actionToken) =>
+      ActionToken actionToken where
+  -- | returns the action corresponding to an Token
+  getAction :: actionToken -> Action
+
+  -- | returns, whether the board is within an state, where the turn can be applied
+  stateMatchesExpectation :: actionToken -> MoveType Bool
+  stateMatchesExpectation _ = do
+    ms <- getMachineState
+    return (ms == WaitForTurn)
