@@ -1,7 +1,9 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Game.MetaGame.Move
        where
 
 import           Data.Text (Text)
+import           Data.Functor.Identity (Identity)
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Writer (Writer, WriterT)
 import qualified Control.Monad.Trans.Writer as W
@@ -19,29 +21,48 @@ import Game.MetaGame.GameState
 --------------------------------------------------------------------------------
 -- * Move
 -- ** InnerMove
+-- the persistent part, which survives single moves
 
-type InnerMoveType
-  = ExceptT Text -- ^ uses ExceptT to communicate failures
-    ( WriterT Log ) -- ^ uses WriterT to log
+type InnerMoveWRType
+  = ExceptT ( Text -- ^ communicate failures
+            , Int ) -- ^ number of failed command
+            ( Writer Log ) -- ^ write a log
+
+newtype InnerMoveWR r
+  = IM { unpackInnerMove :: InnerMoveWRType r }
+  deriving (Functor, Applicative, Monad)
 
 type InnerMoveResult r
-  = ( Either Text -- ^ this maybe contains the error text
+  = ( Either (Text, Int) -- ^ this maybe contains the error text
       r -- ^ this is the calculated result
     , Log ) -- ^ this contains the log
+
+runInnerMoveType :: InnerMoveWR r -> InnerMoveResult r
+runInnerMoveType = W.runWriter . E.runExceptT . unpackInnerMove
 
 --------------------------------------------------------------------------------
 -- ** Move
 
-newtype MoveWR a r
-  = M { unpackMove :: StateT GameState
-                             ( InquiryLayer a )
-                             r }
+type UserIndependentMoveType r
+  = StateT GameState
+           InnerMoveWR
+           r
 
-newtype FullMove r
-  = MoveWR InnerMoveType r
+newtype UserIndependentMove r
+  = UIM { unpackUIMove :: UserIndependentMoveType r }
+  deriving (Functor, Applicative, Monad)
 
-liftFromInner :: InnerMoveType r -> MoveWR a r
-liftFromInner = M . lift . lift . lift
+type MoveType r
+  = ReaderT UserId -- ^ the user doing the action (also the logging user, ...)
+            UserIndependentMove
+            r
+
+newtype Move r
+  = M { unpackMove :: MoveType r }
+  deriving (Functor, Applicative, Monad)
+
+liftFromInner :: InnerMoveWR r -> Move r
+liftFromInner = M . lift . UIM . lift
 
 type OuterMoveResult r
   = InquiryResult ( r -- ^ this is the calculated result
@@ -52,24 +73,6 @@ type MoveResult r = InnerMoveResult (OuterMoveResult r)
 
 -- | a 'Move' does not calculate anything, it just modifies the state (+ failures + log)
 
-runMove :: GameState -> [Answer] -> MoveWR a -> MoveResult a
-runMove gameState as = runMoveType gameState as . unpackMove
-
-instance Monoid Move where
-  mempty                = M $ S.modify id -- TODO
-  mappend (M t1) (M t2) = M $ t1 >> t2
-
-instance Functor MoveWR where
-  fmap f move = move >>= (return . f)
-
-instance Applicative MoveWR where
-  pure r = M $ return r
-  (M getF) <*> (M getX) = M $ do
-    r <- getF
-    x <- getX
-    return $ r x
-
-instance Monad MoveWR where
-  return t    = M $ return t
-  (M t) >>= f = M $ t >>= (unpackMove . f)
+-- runMove :: GameState -> [Answer] -> MoveWR a -> MoveResult a
+-- runMove gameState as = runMoveType gameState as . unpackMove
 
