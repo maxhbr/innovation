@@ -10,17 +10,14 @@ module Game.Innovation.ActionTokens
 
 import           Prelude hiding (log)
 import           Control.Monad
-import qualified Control.Monad.Trans.State.Lazy as S
-import qualified Control.Lens as L
 
 import           Game.Innovation.Types
-import qualified Game.Innovation.TypesLenses as L
 import qualified Game.Innovation.Cards as Cards
 import           Game.Innovation.Rules
 
 onlyPrepareState :: MoveType Bool
 onlyPrepareState = do
-  ms <- S.gets getMachineState'
+  ms <- getMachineState
   return (ms == Prepare)
 
 --------------------------------------------------------------------------------
@@ -31,7 +28,7 @@ onlyPrepareState = do
 data AddPlayer = AddPlayer String
                deriving (Eq, Show, Read)
 instance View AddPlayer
-instance ActionToken Board AddPlayer where
+instance ActionToken AddPlayer where
   stateMatchesExpectation _ = onlyPrepareState
 
   getAction (AddPlayer newPlayerId) = (mkAdminA . addPlayer) newPlayerId
@@ -42,13 +39,13 @@ data StartGame = StartGame Int
                deriving (Eq, Show, Read)
 instance View StartGame where
   view (StartGame seed) = "StartGame " <<> view (Seed seed)
-instance ActionToken Board StartGame where
+instance ActionToken StartGame where
   stateMatchesExpectation _ = onlyPrepareState
 
   getAction (StartGame seed) = mkAdminA $ do
     M $ log "start the game"
     M $ do
-      ps <- L.use L.players
+      ps <- getPlayers
       unless (length ps >= 2 && length ps <= 4)
         (logError "Numer of players is not valid")
     setDeck Cards.getDeck
@@ -66,7 +63,7 @@ instance ActionToken Board StartGame where
 data Draw = Draw
           deriving (Eq, Read, Show)
 instance View Draw
-instance ActionToken Board Draw where
+instance ActionToken Draw where
   getAction Draw = drawAnd >>= putIntoHand
 
 -- | Play
@@ -74,19 +71,19 @@ data Play = Play CardId
           deriving (Eq, Read, Show)
 instance View Play where
   view (Play cardId) = "Play " <<> view cardId
-instance ActionToken Board Play where
+instance ActionToken Play where
   getAction (Play cardId) = putTheHandCardsIntoPlay [cardId]
 
 -- | Dominate
 data Dominate = Dominate Age
               deriving (Eq, Read, Show)
 instance View Dominate
-instance ActionToken Board Dominate where
+instance ActionToken Dominate where
   getAction (Dominate age) = dominateAge age
 
 -- | Activate
 data Activate = Activate Color
               deriving (Eq, Read, Show)
 instance View Activate
-instance ActionToken Board Activate where
+instance ActionToken Activate where
   getAction (Activate color) = activate color

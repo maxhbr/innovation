@@ -15,21 +15,24 @@ import qualified Game.Innovation.TypesLenses as L
 import           Game.Innovation.Rules.Helper
 import           Game.Innovation.Rules.CoreRules
 import           Game.Innovation.Rules.CoreActions
+import           Game.Innovation.Types.StackHelper
 
 
 setDeck :: Map Age DrawStack -> Move
-setDeck deck = M $ S.modify (\board -> board{ _drawStacks=deck })
+setDeck deck = M $ setDrawStacks deck
 
 drawDominations :: Move
 drawDominations = M $ mapM_ (\age -> do
-                                (d,ds) <- S.gets (popCards 1 . fromJust . Map.lookup age . L.view L.drawStacks)
-                                S.modify (L.over L.dominateables (pushCards d))
-                                S.modify (L.over L.drawStacks (Map.insert age ds))) ages
+                                drawn <- drawOfStackOf age
+                                case drawn of
+                                  Just card -> modifyDominateables (pushCard card)
+                                  Nothing   -> logError ("failed to draw domination of age" ++ show age)) ages
 
 shuffle :: Seed -> Move
 shuffle seed = M $ do
   logAnEntry ("Shuffle with " <<> view seed)
-  S.modify (shuffleState seed)
+  logTODO "... shuffle"
+  -- S.modify (shuffleState seed)
 
 addPlayer :: String -> Move
 addPlayer playerId = M $ do
@@ -38,7 +41,7 @@ addPlayer playerId = M $ do
   case mstate of
     Prepare -> do
       let newPlayer = mkPlayer playerId
-      S.modify (L.players L.%~ (newPlayer :))
+      addPlayerM newPlayer
     _       -> logError "not in prepare state."
 
 determineInitialPlayerOrder :: Move
@@ -48,7 +51,7 @@ determineInitialPlayerOrder = let
   finalizeInitialPlayerOrder [p1,p2,p3,p4] = [p1,p2,p3,p3,p4,p4]
   finalizeInitialPlayerOrder _             = error "in finalizeInitialPlayerOrder"
   in M $ do
-    ps <- L.use L.players
+    ps <- getPlayers
     let playedCards = map (\p -> let
                               playedCard = getActiveCards p
                               in (idOf p,playedCard)) ps
@@ -60,12 +63,12 @@ determineInitialPlayerOrder = let
     let minimalCard = minimum (map snd uidWithInitialCard)
     let prefix = takeWhile (\(_,c) -> c /= minimalCard) uidWithInitialCard
     let postfix = dropWhile (\(_,c) -> c /= minimalCard) uidWithInitialCard
-    L.playerOrder L..= finalizeInitialPlayerOrder (map fst (postfix ++ prefix)) -- FALSE! / TODO
+    setUIds (finalizeInitialPlayerOrder (map fst (postfix ++ prefix))) -- FALSE! / TODO
 
 handOutInitialCards :: Move
 handOutInitialCards = do
   M $ do
-     ps <- L.use L.players
+     ps <- getPlayers
      Admin `loggs` "determin first cards"
      initialCards <- mapM ((\uid -> fmap (\l -> (uid,l))
                                          (uid `takes` drawNOfAnd 2 Age1)) . idOf)
@@ -79,4 +82,4 @@ handOutInitialCards = do
                uid `takes` putIntoPlay playCards
                uid `takes` putIntoHand handCards) answeredQuestions
   determineInitialPlayerOrder
-  M $ L.machineState L..= WaitForTurn
+  M $ setMachineState WaitForTurn

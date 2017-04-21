@@ -5,7 +5,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
-module Game.Innovation.Types
+module Game.Innovation.Types.Core
        ( module X
        , Color (..), colors, mkColored
        , Age (..), ages
@@ -15,9 +15,9 @@ module Game.Innovation.Types
        , DogmaChain (..), dogmasFromList
        , CardId (..), Card (..)
        , RawStack
-       , Stack (..), isEmptyStack, onRawStack
+       , Stack (..), isEmptyStack, onRawStack, removeFromStack
        , DrawStack (..)
-       , PlayStack (..), SplayState (..)
+       , PlayStack (..), SplayState (..), getSplayState
        , Dominateables (..)
        , Domination (..), Dominations (..), addDomination
        , Hand (..)
@@ -25,22 +25,7 @@ module Game.Innovation.Types
        , Player (..), mkPlayer
        , getInfluence
        , PlayerOrder
-       , Board (..)
-       , Seed (..), shuffleState
-
-       , InnerMoveType
-       , InnerMoveResult
-       , OuterMoveResult
-       , MoveType
-       , MoveResult
-       , MoveWR
-       , Move
-       , ActionType
-       , ActionWR
-       , Action
-       , UserInput
-       , does
-       , chooses
+       , Seed (..)
        ) where
 
 import           Data.Map (Map)
@@ -48,9 +33,8 @@ import qualified Data.Map as Map
 import           Data.String
 import           Data.Text (Text)
 import qualified Data.Text as T
-import           Data.Proxy
-import           System.Random
-import           System.Random.Shuffle (shuffle')
+-- import           System.Random
+-- import           System.Random.Shuffle (shuffle')
 import           Control.Monad.Trans.Writer (WriterT)
 import qualified Control.Monad.Trans.Writer as W
 import           Control.Monad.Trans.Reader (ReaderT)
@@ -58,29 +42,18 @@ import qualified Control.Monad.Trans.Reader as R
 
 import qualified System.HsTColors as HsT
 
-import qualified Game.MetaGame as MG
-import           Game.MetaGame as X hiding ( InnerMoveType
-                                           , InnerMoveResult
-                                           , OuterMoveResult
-                                           , MoveType
-                                           , MoveResult
-                                           , MoveWR
-                                           , Action
-                                           , Move
-                                           , ActionType
-                                           , ActionWR
-                                           , UserInput
-                                           , chooses
-                                           , does
-                                           , askForBool
-                                           , chooseOneOf
-                                           , chooseNOf
-                                           )
+import           Game.MetaGame as X hiding ( getObject, setObject, modifyObject
+                                           , getIdFyObject, setIdFyObject, modifyIdFyObject )
+
 --------------------------------------------------------------------------------
 -- Basic types
 --------------------------------------------------------------------------------
 
-data Color = Blue | Purple | Red | Yellow | Green
+data Color = Blue
+           | Purple
+           | Red
+           | Yellow
+           | Green
   deriving (Eq,Show,Read,Enum,Ord,Bounded)
 instance View Color
 mkColored :: Color -> String -> String
@@ -120,11 +93,11 @@ type WithInputAndOutput a b m = ReaderT a (WriterT b m)
 
 data DogmaWR a b
   = Dogma Symbol Text Action
-  | GenDogma Symbol Text (WithInputAndOutput a b (MG.ActionWR Board) ())
+  | GenDogma Symbol Text (WithInputAndOutput a b ActionWR ())
   | IDemand Symbol Text (UserId -- ^ user issueing the dogma
                          -> Action)
   | GenIDemand Symbol Text (UserId -- ^ user issueing the dogma
-                            -> WithInputAndOutput a b (MG.ActionWR Board) ())
+                            -> WithInputAndOutput a b ActionWR ())
 instance Show (DogmaWR a b) where
   show (Dogma s d _)      = "[" ++ show s ++ "] " ++ T.unpack d
   show (GenDogma s d _)   = "[" ++ show s ++ "] " ++ T.unpack d
@@ -291,6 +264,10 @@ onRawStack :: Stack a =>
               (RawStack -> RawStack) -> a -> a
 onRawStack f a = setRawStack a (f (getRawStack a))
 
+removeFromStack :: Stack a =>
+                   Card -> a -> a
+removeFromStack c = onRawStack (filter (/= c))
+
 newtype DrawStack = DrawStack RawStack
                   deriving (Show)
 instance Stack DrawStack where
@@ -382,60 +359,13 @@ instance Show Player where
 
 instance View Player where
   getOwner = idOf
-
-  -- showRestricted p@(Player uid ps inf doms hand) = undefined
-
   view = view . _playerId
-  -- pp p = "** Player: " ++ pp (_playerId p) ++ ":\n"
-  --        ++ pp (_stacks p)
-  --        ++ pp (_splayStates p)
-  --        ++ "influence: " ++ pp (_influence p) ++ "\n"
-  --        ++ "dominations: " ++ pp (_dominations p) ++ "\n"
-  --        ++ "hand: " ++ pp (_hand p) ++ "\n"
 
 --------------------------------------------------------------------------------
 -- Game state
 --------------------------------------------------------------------------------
 
 type PlayerOrder = [UserId]
-
-data Board = Board { _machineState        :: MachineState -- ^ The internal state of the underlying machine
-                   , _drawStacks          :: Map Age DrawStack -- ^ the draw stacks, one for every age. The topmost card is the head
-                   , _dominateables       :: Dominateables -- ^ the cards, which could be dominated
-                   , _players             :: [Player] -- ^ the players playing in this game (in any order)
-                   , _playerOrder         :: PlayerOrder -- ^ the order, in which the players take actions
-                   , _specialAchievements :: SpecialAchievements
-                   }
-             deriving (Show)
-
---------------------------------------------------------------------------------
--- Boilerplate:
-type InnerMoveType = MG.InnerMoveType Board
-type InnerMoveResult r = MG.InnerMoveResult Board r
-type OuterMoveResult r = MG.OuterMoveResult Board r
-type MoveType = MG.MoveType Board
-type MoveResult r = MG.MoveResult Board r
-type MoveWR r = MG.MoveWR Board r
-type Move = MG.Move Board
-type ActionType = MG.ActionType Board
-type Action = MG.Action Board
-type ActionWR r = MG.ActionWR Board r
-type UserInput = MG.UserInput Board
-
-does :: ActionToken Board actionToken =>
-        UserId -> actionToken -> UserInput
-does = MG.does (Proxy :: Proxy Board)
-
-chooses :: UserId -> (UserId -> Answer) -> UserInput
-chooses = MG.chooses (Proxy :: Proxy Board)
-
--- | possible answer (Yes)
-toPlayMaybe :: UserId -> Answer
-toPlayMaybe = answerYes
-
--- | possible answer (No)
-notToPlayMaybe :: UserId -> Answer
-notToPlayMaybe = answerNo
 
 --------------------------------------------------------------------------------
 -- Generators
@@ -454,13 +384,13 @@ instance View Seed where
   showUnrestricted _ = "[seed only visible for admin]"
   getOwner _ = Admin
 
--- | shuffle the draw stacks and the players
-shuffleState :: Seed -> Board -> Board
-shuffleState (Seed seed) board = board{ _drawStacks=permutatedDS, _players=permutatedPlayers }
-  where
-    stdGen = mkStdGen seed
-    shuffle :: [a] -> [a]
-    shuffle []    = []
-    shuffle list = shuffle' list (length list) stdGen
-    permutatedDS = Map.map (onRawStack shuffle) (_drawStacks board)
-    permutatedPlayers = shuffle $ _players board
+-- -- | shuffle the draw stacks and the players
+-- shuffleState :: Seed -> Board -> Board
+-- shuffleState (Seed seed) board = board{ _drawStacks=permutatedDS, _players=permutatedPlayers }
+--   where
+--     stdGen = mkStdGen seed
+--     shuffle :: [a] -> [a]
+--     shuffle []    = []
+--     shuffle list = shuffle' list (length list) stdGen
+--     permutatedDS = Map.map (onRawStack shuffle) (_drawStacks board)
+--     permutatedPlayers = shuffle $ _players board

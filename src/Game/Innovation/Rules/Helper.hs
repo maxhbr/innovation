@@ -6,7 +6,6 @@ import           Data.Map (Map)
 import qualified Data.Map as Map
 import           Control.Monad.Trans.Class
 import qualified Control.Monad.Trans.Reader as R
-import qualified Control.Monad.Trans.State.Lazy as S
 import qualified Control.Lens as L
 
 import           Game.Innovation.Types
@@ -15,12 +14,12 @@ import           Game.Innovation.Rules.CoreRules ()
 
 liftToGet :: (Player -> a) -> UserId -> MoveType a
 liftToGet f uid = do
-  player <- getPlayerById uid
+  player <- getPlayer uid
   return (f player)
 
 lift2ToGet :: (b -> Player -> a) -> b -> UserId -> MoveType a
 lift2ToGet f b uid = do
-  player <- getPlayerById uid
+  player <- getPlayer uid
   return (f b player)
 
 --------------------------------------------------------------------------------
@@ -31,19 +30,10 @@ stackFromMapBy :: (Ord k, Stack s) =>
                      k -> Map k s -> s
 stackFromMapBy = Map.findWithDefault emptyStack
 
-getPlayerById :: UserId -> MoveType Player
-getPlayerById uid = do
-  players <- S.gets _players
-  let playersWithId = filter (\p -> idOf p == uid) players
-  case playersWithId of
-    [p] -> return p
-    []  -> logError "player not found"
-    _   -> logFatal "multiple players found, with the same id"
-
-getUidsWith :: (Player -> Bool) -> MoveType [UserId]
-getUidsWith t = do
-  ps <- fmap (filter t) (L.use L.players)
-  return (map _playerId ps)
+-- getUidsWith :: (Player -> Bool) -> MoveType [UserId]
+-- getUidsWith t = do
+--   ps <- fmap (filter t) (L.use L.players)
+--   return (map _playerId ps)
 
 --------------------------------------------------------------------------------
 -- Getter for ages
@@ -60,11 +50,11 @@ ageOf player = let
      else Age1
 
 getAgeOf :: UserId -> MoveType Age
-getAgeOf = fmap ageOf . getPlayerById
+getAgeOf = fmap ageOf . getPlayer
 
 getDrawAgeByAge :: Age -> MoveType (Maybe Age)
 getDrawAgeByAge inputAge = do
-  currentDrawStacks <- S.gets _drawStacks
+  currentDrawStacks <- getDrawStacks
   let agesAboveWithCards = Map.keys $
                            Map.filterWithKey (\ age stack -> age >= inputAge
                                                              && (not . isEmptyStack) stack)
@@ -129,12 +119,6 @@ getProductionsOf = liftToGet productionsOf
 
 getProductionsForSymbolOf :: Symbol -> UserId -> MoveType Int
 getProductionsForSymbolOf symb uid = fmap (Map.findWithDefault 0 symb) (getProductionsOf uid)
-
-modifyPlayer :: UserId -> (Player -> Player) -> MoveType ()
-modifyPlayer userId f = do
-  playerToModify <- getPlayerById userId
-  let modifiedPlayer = f playerToModify
-  S.modify $ \b -> b {_players = modifiedPlayer : filter (\p -> not $ p `hasId` userId) (_players b)}
 
 playedColorsOf :: Player -> [Color]
 playedColorsOf Player{ _zone=ps } = [c | c <- colors
