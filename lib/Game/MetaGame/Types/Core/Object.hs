@@ -55,6 +55,7 @@ instance Eq Object where
          _        -> False
 
 newtype World = World [Object]
+  deriving (Show, Eq)
 
 getObject :: IdAble a =>
              IdF a -> World -> Maybe a

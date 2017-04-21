@@ -2,22 +2,34 @@
 module Game.MetaGame.Action
        where
 
-import Game.MetaGame.Types.Core
-import Game.MetaGame.Move
-
+import           Control.Monad.Trans (lift)
+import qualified Control.Monad.Trans.Reader as R
 import           Control.Monad.Trans.Reader (ReaderT)
+
+import           Game.MetaGame.Types.Core
+import           Game.MetaGame.Types.GameState
+import           Game.MetaGame.Move
 
 --------------------------------------------------------------------------------
 -- * Action
 
-newtype Action
-  = A { unpackAction :: ReaderT UserId -- ^ the user doing the action (also the logging user, ...)
-                                FullMove -- ^ the move behind the action
-                                () }
+type ActionType r
+  = ReaderT UserId -- ^ the user doing the action (also the logging user, ...)
+            Move
+            r
+
+liftFromInner :: InnerMoveWR r -> Move r
+liftFromInner = M . lift
+
+newtype Action r
+  = A { unpackAction :: ActionType r }
   deriving (Functor, Applicative, Monad)
 
-takes :: UserId -> Action -> FullMove ()
-takes uid = runActionType uid . unpackAction
+liftFromMove :: InnerMoveWR r -> Action r
+liftFromMove = A . lift . liftFromInner
+
+takes :: UserId -> Action r -> Move r
+takes uid = (flip R.runReaderT uid) . unpackAction
 
 -- ** ActionToken
 -- ActionTokens are used to identify actions
@@ -28,10 +40,10 @@ takes uid = runActionType uid . unpackAction
 class (View actionToken, Eq actionToken, Read actionToken, Show actionToken) =>
       ActionToken actionToken where
   -- | returns the action corresponding to an Token
-  getAction :: actionToken -> Action
+  getAction :: actionToken -> Action ()
 
   -- | returns, whether the board is within an state, where the turn can be applied
-  stateMatchesExpectation :: actionToken -> InnerMoveWR Bool
+  stateMatchesExpectation :: actionToken -> Move Bool
   stateMatchesExpectation _ = do
     ms <- getMachineState
     return (ms == WaitForTurn)

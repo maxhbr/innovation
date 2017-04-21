@@ -16,7 +16,7 @@ import qualified Control.Monad.Trans.State.Lazy as S
 
 import Game.MetaGame.Types.Core
 import Game.MetaGame.Types.Inquiry
-import Game.MetaGame.GameState
+import Game.MetaGame.Types.GameState
 
 --------------------------------------------------------------------------------
 -- * Move
@@ -43,26 +43,15 @@ runInnerMoveType = W.runWriter . E.runExceptT . unpackInnerMove
 --------------------------------------------------------------------------------
 -- ** Move
 
-type UserIndependentMoveType r
+type MoveType r
   = StateT GameState
            InnerMoveWR
            r
 
-newtype UserIndependentMove r
-  = UIM { unpackUIMove :: UserIndependentMoveType r }
-  deriving (Functor, Applicative, Monad)
-
-type MoveType r
-  = ReaderT UserId -- ^ the user doing the action (also the logging user, ...)
-            UserIndependentMove
-            r
-
 newtype Move r
-  = M { unpackMove :: MoveType r }
+  = M { unpackUIMove :: MoveType r }
   deriving (Functor, Applicative, Monad)
 
-liftFromInner :: InnerMoveWR r -> Move r
-liftFromInner = M . lift . UIM . lift
 
 type OuterMoveResult r
   = InquiryResult ( r -- ^ this is the calculated result
@@ -71,8 +60,13 @@ type OuterMoveResult r
 type MoveResult r = InnerMoveResult (OuterMoveResult r)
 
 
--- | a 'Move' does not calculate anything, it just modifies the state (+ failures + log)
 
 -- runMove :: GameState -> [Answer] -> MoveWR a -> MoveResult a
 -- runMove gameState as = runMoveType gameState as . unpackMove
+
+--------------------------------------------------------------------------------
+-- *** helper for Move
+
+getMachineState :: Move MachineState
+getMachineState = M (S.gets _machineState)
 

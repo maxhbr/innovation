@@ -4,9 +4,11 @@ module Game.MetaGame.Play
        , play
        ) where
 
+import Game.MetaGame.Types.GameState
+import Game.MetaGame.Move
 import Game.MetaGame.Game
 
-type SuccessPlayResult = ( InnerMoveResult board board -- ^ the result of the input Game
+type SuccessPlayResult = ( InnerMoveResult GameState -- ^ the result of the input Game
                          , Game -- ^ the evaluated "prefix" of the input Game
                          )
 type FailPlayResult = ( SuccessPlayResult

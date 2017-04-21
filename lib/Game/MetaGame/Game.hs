@@ -3,7 +3,9 @@ module Game.MetaGame.Game
 
 import Game.MetaGame.Action
 
+data Rules
+
 type History
-  = [Action]
+  = [Action ()]
 data Game
   = G Rules History

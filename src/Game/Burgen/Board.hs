@@ -1,8 +1,10 @@
+{-# LANGUAGE ExistentialQuantification #-}
 module Game.Burgen.Board
   where
 
 import qualified Data.Map as Map
 import           Data.Map (Map)
+import           Data.List
 
 import Game.Burgen.Types
 import Math.Geometry.Grid
@@ -12,26 +14,139 @@ import Math.Geometry.Grid.Hexagonal
 -- see http://hackage.haskell.org/package/grid-7.8.8/docs/Math-Geometry-Grid-Hexagonal.html
 -- see http://hackage.haskell.org/package/grid-7.8.8/docs/Math-Geometry-GridInternal.html#t:Grid
 
-class (Eq playerBoard, Read playerBoard, Show playerBoard) =>
-      PlayerBoard playerBoard where
-  makeGrid :: playerBoard -> HexHexGrid
-  makeGrid _ = hexHexGrid 4
+type BoardConfiguration
+  = Map (Int,Int) Tile
 
-  getKindAt :: playerBoard -> Index HexHexGrid -> TileKind
-  getDieRollAt :: playerBoard -> Index HexHexGrid -> DieRoll
+--------------------------------------------------------------------------------
+-- * Board
 
-  isValidConfiguration :: playerBoard -> Map (Index HexHexGrid) Tile -> Bool
+class Board board where
+  getIndices :: board -> [(Int,Int)]
+  getKindAt :: board -> (Int,Int) -> TileKind
+  getDieRollAt :: board -> (Int,Int) -> DieRoll
+
+  getInitialConfiguration :: board -> BoardConfiguration
+  getInitialConfiguration _ = Map.fromList []
+
+  getCurrentConfiguration :: board -> BoardConfiguration
+
+--------------------------------------------------------------------------------
+-- * PlayerBoardC and PlayerBoard
+
+class (Eq playerBoard, Read playerBoard, Show playerBoard, Board playerBoard) =>
+      PlayerBoardC playerBoard where
+
+  isValidConfiguration :: playerBoard -> Bool
   isValidConfiguration pb = let
-    grid = makeGrid pb
     f :: Index HexHexGrid -> Tile -> Bool -> Bool
-    f i t = (&& (grid `contains` i) && (getKindAt pb i == getKind t))
-    in Map.foldWithKey f True
+    f i t = (&& (getKindAt pb i == getKind t))
+    in Map.foldWithKey f True (getCurrentConfiguration pb)
 
--- * BasicPlayerBoard
-data BasicPlayerBoard
-  = BasicPlayerBoard
+data PlayerBoard
+  = forall a. PlayerBoardC a => PlayerBoard a
+
+instance Show PlayerBoard where
+  show (PlayerBoard a) = show a
+
+--------------------------------------------------------------------------------
+-- * Player
+
+data Player
+  = Player { getPlayerName           :: UserId
+           , getPlayerBoard          :: PlayerBoard
+           , getCurrentPlayerDieRoll :: [DieRoll]
+           , getCurrentPlayerScore   :: Int }
+  deriving (Show)
+
+instance Eq Player where
+  p1 == p2 = (getPlayerName p1) == (getPlayerName p2)
+
+--------------------------------------------------------------------------------
+-- * CentralBoard
+
+class (Eq centralBoard, Read centralBoard, Show centralBoard, Board centralBoard) =>
+      CentralBoard centralBoard where
+  sizeNumberOfBlackMarket :: centralBoard -> Int
+  getCurrentBlackMarket :: centralBoard -> [Tile]
+  getNumberOfPlayers :: centralBoard -> Int
+
+  getCurrentColors :: centralBoard -> [Color]
+  getPlayerByColor :: centralBoard -> Color -> Player
+
+
+--------------------------------------------------------------------------------
+-- * Basic instances
+
+--------------------------------------------------------------------------------
+-- ** BasicCentralBoard
+data BasicCentralBoard
+  = BasicCentralBoard BoardConfiguration -- ^ configuration
+                      [Tile] -- ^ black market
+                      Int -- ^ number of players in the Game
   deriving (Eq, Show, Read)
-instance PlayerBoard BasicPlayerBoard where
+
+instance Board BasicCentralBoard where
+  getInitialConfiguration _ = Map.fromList []
+  getCurrentConfiguration (BasicCentralBoard bc _ _) = bc
+
+  getIndices pn = let
+    allIndices = [ [(1,0), (1,1), (1,2), (1,3)]
+                 , [(2,0), (2,1), (2,2), (2,3)]
+                 , [(3,0), (3,1), (3,2), (3,3)]
+                 , [(4,0), (4,1), (4,2), (4,3)]
+                 , [(5,0), (5,1), (5,2), (5,3)]
+                 , [(6,0), (6,1), (6,2), (6,3)] ]
+    indexReducer = take (getNumberOfPlayers pn)
+    in concatMap indexReducer allIndices
+
+  getKindAt _ (1,0) = GenKind
+  getKindAt _ (1,1) = GenKind
+  getKindAt _ (1,2) = GenKind
+  getKindAt _ (1,3) = GenKind
+  getKindAt _ (2,0) = GenKind
+  getKindAt _ (2,1) = GenKind
+  getKindAt _ (2,2) = GenKind
+  getKindAt _ (2,3) = GenKind
+  getKindAt _ (3,0) = GenKind
+  getKindAt _ (3,1) = GenKind
+  getKindAt _ (3,2) = GenKind
+  getKindAt _ (3,3) = GenKind
+  getKindAt _ (4,0) = GenKind
+  getKindAt _ (4,1) = GenKind
+  getKindAt _ (4,2) = GenKind
+  getKindAt _ (4,3) = GenKind
+  getKindAt _ (5,0) = GenKind
+  getKindAt _ (5,1) = GenKind
+  getKindAt _ (5,2) = GenKind
+  getKindAt _ (5,3) = GenKind
+  getKindAt _ (6,0) = GenKind
+  getKindAt _ (6,1) = GenKind
+  getKindAt _ (6,2) = GenKind
+  getKindAt _ (6,3) = GenKind
+
+  getDieRollAt _ (1,_) = DieRoll1 -- TODO: use Enum Instance
+  getDieRollAt _ (2,_) = DieRoll2
+  getDieRollAt _ (3,_) = DieRoll3
+  getDieRollAt _ (4,_) = DieRoll4
+  getDieRollAt _ (5,_) = DieRoll5
+  getDieRollAt _ (6,_) = DieRoll6
+
+instance CentralBoard BasicCentralBoard where
+  getNumberOfPlayers (BasicCentralBoard _ _ pn) = pn
+  sizeNumberOfBlackMarket (BasicCentralBoard _ _ 2) = 4
+  sizeNumberOfBlackMarket (BasicCentralBoard _ _ 3) = 6
+  sizeNumberOfBlackMarket (BasicCentralBoard _ _ 4) = 8
+  getCurrentBlackMarket (BasicCentralBoard _ bm _) = bm
+
+--------------------------------------------------------------------------------
+-- ** BasicPlayerBoard
+newtype BasicPlayerBoard
+  = BasicPlayerBoard BoardConfiguration
+  deriving (Eq, Show, Read)
+instance Board BasicPlayerBoard where
+  getInitialConfiguration _ = Map.fromList [((0,0), CastleTile)]
+  getCurrentConfiguration (BasicPlayerBoard c) = c
+
   --                                     y:
   --                  6 5 4 3  ---------  3
   --                 2 1 6 5 4  --------  2
